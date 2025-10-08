@@ -38,7 +38,7 @@ class FeedViewModel : ViewModel() {
                 username = "Faiza Tashmeah",
                 userAvatarUrl = "",
                 timestamp = "15m",
-                content = "Anyone has a charger I can borrow this afternoon?",
+                content = "Anyone has a charger-fan I can borrow this afternoon?",
                 imageUrl = null,
                 likes = 1,
                 comments = 5
