@@ -10,18 +10,14 @@ import java.util.UUID
 
 class FeedViewModel : ViewModel() {
 
+
     private val _posts = MutableStateFlow(generateDummyPosts())
     val posts: StateFlow<List<Post>> = _posts.asStateFlow()
 
-    fun like(postId: String) {
+    // Accept action (uses likes as the accepted counter for now)
+    fun accept(postId: String) {
         _posts.update { list ->
             list.map { if (it.id == postId) it.copy(likes = it.likes + 1) else it }
-        }
-    }
-
-    fun comment(postId: String) {
-        _posts.update { list ->
-            list.map { if (it.id == postId) it.copy(comments = it.comments + 1) else it }
         }
     }
 
@@ -29,31 +25,31 @@ class FeedViewModel : ViewModel() {
         private fun generateDummyPosts(): List<Post> = listOf(
             Post(
                 id = UUID.randomUUID().toString(),
-                username = "Alex Johnson",
+                username = "Maishan Nadis",
                 userAvatarUrl = "",
                 timestamp = "2m",
-                content = "Lost cat near Maple St. Please keep an eye out!",
+                content = "Lost cat near Kalabagan Please keep an eye out!",
                 imageUrl = null,
                 likes = 4,
                 comments = 2
             ),
             Post(
                 id = UUID.randomUUID().toString(),
-                username = "Priya Singh",
+                username = "Faiza Tashmeah",
                 userAvatarUrl = "",
                 timestamp = "15m",
-                content = "Anyone has a ladder I can borrow this afternoon?",
+                content = "Anyone has a charger I can borrow this afternoon?",
                 imageUrl = null,
                 likes = 1,
                 comments = 5
             ),
             Post(
                 id = UUID.randomUUID().toString(),
-                username = "Miguel Santos",
+                username = "Safwat Bushra",
                 userAvatarUrl = "",
                 timestamp = "1h",
-                content = "Community garden meetup was a success! Here's a photo of today's harvest.",
-                imageUrl = "https://example.com/demo-image.jpg",
+                content = "Need a Math tutor for my cousin. Any recommendations?",
+                imageUrl = null,
                 likes = 12,
                 comments = 3
             )
