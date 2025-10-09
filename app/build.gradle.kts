@@ -50,6 +50,9 @@ dependencies {
     // Icons (Outlined/Filled) for Material3 components
     implementation("androidx.compose.material:material-icons-extended")
 
+    // Navigation Compose for in-app navigation
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+
     // Image loading for avatars and post images
     implementation("io.coil-kt:coil-compose:2.6.0")
 
