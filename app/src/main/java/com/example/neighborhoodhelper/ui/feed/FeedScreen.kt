@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +18,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,12 +31,21 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.neighborhoodhelper.model.Post
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
+import androidx.compose.material3.HorizontalDivider
 
 @Composable
 fun FeedScreen(viewModel: FeedViewModel) {
     val postsState = viewModel.posts.collectAsStateWithLifecycle()
     val posts = postsState.value
 
+    FeedContent(posts = posts, onAccept = { viewModel.accept(it) })
+}
+
+@Composable
+fun FeedContent(
+    posts: List<Post>,
+    onAccept: (postId: String) -> Unit
+) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -64,11 +74,11 @@ fun FeedScreen(viewModel: FeedViewModel) {
             itemsIndexed(posts, key = { _, item -> item.id }) { index, post ->
                 PostCard(
                     post = post,
-                    onAccept = { viewModel.accept(post.id) }
+                    onAccept = { onAccept(post.id) }
                 )
 
                 if (index < posts.lastIndex) {
-                    Divider(
+                    HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                         thickness = 0.5.dp
@@ -195,8 +205,133 @@ private fun Avatar(username: String) {
 
 @Preview(showBackground = true, name = "FeedScreenPreview")
 @Composable
-private fun FeedScreenPreview() {
+fun FeedScreenPreview() {
+    // Provide sample posts for preview so we don't need a ViewModel in the preview.
+    val samplePosts = listOf(
+        Post(
+            id = "1",
+            username = "Maishan Nadis",
+            userAvatarUrl = "",
+            timestamp = "2m",
+            content = "Lost cat near Kalabagan Please keep an eye out!",
+            imageUrl = null,
+            likes = 4,
+            comments = 2
+        ),
+        Post(
+            id = "2",
+            username = "Faiza Tashmeah",
+            userAvatarUrl = "",
+            timestamp = "15m",
+            content = "Anyone has a charger-fan I can borrow this afternoon?",
+            imageUrl = null,
+            likes = 1,
+            comments = 5
+        ),
+        Post(
+            id = "3",
+            username = "Safwat Bushra",
+            userAvatarUrl = "",
+            timestamp = "1h",
+            content = "Need a Math tutor for my cousin. Any recommendations?",
+            imageUrl = null,
+            likes = 12,
+            comments = 3
+        )
+    )
+
     NeighborhoodHelperTheme {
-        FeedScreen(viewModel = FeedViewModel())
+        FeedContent(posts = samplePosts, onAccept = {})
+    }
+}
+
+@Preview(showBackground = true, name = "FeedScreenFullPreview")
+@Composable
+fun FeedScreenFullPreview() {
+    // For preview we avoid constructing a ViewModel. Reuse sample posts to show the full screen.
+    val samplePosts = listOf(
+        Post(
+            id = "1",
+            username = "Maishan Nadis",
+            userAvatarUrl = "",
+            timestamp = "2m",
+            content = "Lost cat near Kalabagan Please keep an eye out!",
+            imageUrl = null,
+            likes = 4,
+            comments = 2
+        ),
+        Post(
+            id = "2",
+            username = "Faiza Tashmeah",
+            userAvatarUrl = "",
+            timestamp = "15m",
+            content = "Anyone has a charger-fan I can borrow this afternoon?",
+            imageUrl = null,
+            likes = 1,
+            comments = 5
+        ),
+        Post(
+            id = "3",
+            username = "Safwat Bushra",
+            userAvatarUrl = "",
+            timestamp = "1h",
+            content = "Need a Math tutor for my cousin. Any recommendations?",
+            imageUrl = null,
+            likes = 12,
+            comments = 3
+        )
+    )
+
+    NeighborhoodHelperTheme {
+        FeedContent(posts = samplePosts, onAccept = {})
+    }
+}
+
+@Preview(showBackground = true, name = "FeedScreenInteractivePreview")
+@Composable
+fun FeedScreenInteractivePreview() {
+    // Interactive preview: likes update when Accept is pressed using local state.
+    val sample = listOf(
+        Post(
+            id = "1",
+            username = "Maishan Nadis",
+            userAvatarUrl = "",
+            timestamp = "2m",
+            content = "Lost cat near Kalabagan Please keep an eye out!",
+            imageUrl = null,
+            likes = 4,
+            comments = 2
+        ),
+        Post(
+            id = "2",
+            username = "Faiza Tashmeah",
+            userAvatarUrl = "",
+            timestamp = "15m",
+            content = "Anyone has a charger-fan I can borrow this afternoon?",
+            imageUrl = null,
+            likes = 1,
+            comments = 5
+        ),
+        Post(
+            id = "3",
+            username = "Safwat Bushra",
+            userAvatarUrl = "",
+            timestamp = "1h",
+            content = "Need a Math tutor for my cousin. Any recommendations?",
+            imageUrl = null,
+            likes = 12,
+            comments = 3
+        )
+    )
+
+    val postsState = remember { mutableStateListOf<Post>().also { it.addAll(sample) } }
+
+    NeighborhoodHelperTheme {
+        FeedContent(posts = postsState, onAccept = { postId ->
+            val idx = postsState.indexOfFirst { it.id == postId }
+            if (idx >= 0) {
+                postsState[idx] = postsState[idx].copy(likes = postsState[idx].likes + 1)
+            }
+        })
     }
 }
