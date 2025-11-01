@@ -1,7 +1,11 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.example.neighborhoodhelper.ui.feed
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,44 +15,45 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.neighborhoodhelper.model.Post
-import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import com.example.neighborhoodhelper.model.Post
+import com.example.neighborhoodhelper.model.Comment
+import com.example.neighborhoodhelper.ui.components.CommentItem
+import com.example.neighborhoodhelper.ui.components.Avatar
+import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
+import androidx.compose.material3.HorizontalDivider
 
 @Composable
-fun FeedScreen(viewModel: FeedViewModel, navController: NavController) {
+fun FeedScreen(navController: NavController) {
+    val viewModel: FeedViewModel = viewModel()
     val postsState = viewModel.posts.collectAsStateWithLifecycle()
     val posts = postsState.value
+    val commentsState = viewModel.comments.collectAsStateWithLifecycle()
+    val comments = commentsState.value
 
     FeedContent(
         posts = posts,
-        onWilling = { /* no-op */ },
+        comments = comments,
+        onWilling = { viewModel.accept(it) },
+        onAddComment = { postId, author, text -> viewModel.addComment(postId, author, text) },
         onPostClick = { id -> navController.navigate("postDetail/$id") }
     )
 }
@@ -56,14 +61,21 @@ fun FeedScreen(viewModel: FeedViewModel, navController: NavController) {
 @Composable
 fun FeedContent(
     posts: List<Post>,
+    comments: List<Comment>,
     onWilling: (postId: String) -> Unit,
+    onAddComment: (postId: String, author: String, text: String) -> Unit,
     onPostClick: (postId: String) -> Unit
 ) {
+    // track which post's comment box is open
+    val openMap = remember { mutableStateMapOf<String, Boolean>() }
+    // track input text per post
+    val inputMap = remember { mutableStateMapOf<String, String>() }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                modifier = Modifier.shadow(3.dp),
+                modifier = Modifier.shadow(4.dp),
                 title = {
                     Text(
                         "Neighborhood Feed",
@@ -78,26 +90,91 @@ fun FeedContent(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        // subtle background gradient
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            itemsIndexed(posts, key = { _, item -> item.id }) { index, post ->
-                PostCard(
-                    post = post,
-                    onWilling = { onWilling(post.id) },
-                    modifier = Modifier.clickable { onPostClick(post.id) }
-                )
-
-                if (index < posts.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        thickness = 0.5.dp
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.98f)
+                        )
                     )
+                )
+                .padding(innerPadding)
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                itemsIndexed(posts, key = { _, item -> item.id }) { index, post ->
+                    // Animated appearance per item
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(animationSpec = tween(durationMillis = 350, delayMillis = index * 50)) +
+                                slideInVertically(animationSpec = tween(durationMillis = 350, delayMillis = index * 50))
+                    ) {
+                        Column {
+                            PostCard(
+                                post = post,
+                                onWilling = { onWilling(post.id) },
+                                onCommentClick = {
+                                    // toggle input
+                                    openMap[post.id] = !(openMap[post.id] ?: false)
+                                },
+                                modifier = Modifier
+                                    .clickable { onPostClick(post.id) }
+                            )
+
+                            // comments list
+                            val postComments = comments.filter { it.postId == post.id }
+                            if (postComments.isNotEmpty()) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, top = 8.dp)) {
+                                    postComments.forEach { comment ->
+                                        CommentItem(comment = comment)
+                                    }
+                                }
+                            }
+
+                            // inline comment box
+                            val isOpen = openMap[post.id] ?: false
+                            AnimatedVisibility(visible = isOpen) {
+                                Row(modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    val text = inputMap[post.id] ?: ""
+                                    OutlinedTextField(
+                                        value = text,
+                                        onValueChange = { inputMap[post.id] = it },
+                                        placeholder = { Text("Write a comment...") },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 56.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        singleLine = false,
+                                        maxLines = 4
+                                    )
+                                    IconButton(onClick = {
+                                        val toSend = inputMap[post.id]?.trim() ?: ""
+                                        if (toSend.isNotBlank()) {
+                                            onAddComment(post.id, "You", toSend)
+                                            inputMap[post.id] = ""
+                                            openMap[post.id] = false
+                                        }
+                                    }) {
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (index < posts.lastIndex) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), thickness = 0.5.dp)
+                    }
                 }
             }
         }
@@ -108,6 +185,7 @@ fun FeedContent(
 private fun PostCard(
     post: Post,
     onWilling: () -> Unit,
+    onCommentClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ElevatedCard(
@@ -116,17 +194,18 @@ private fun PostCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Header: Avatar + Username + Timestamp
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(username = post.username)
+                Avatar(url = post.userAvatarUrl)
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -143,107 +222,77 @@ private fun PostCard(
                 }
             }
 
-            // Content text
+            // Content summary (2-3 lines)
             if (post.content.isNotBlank()) {
                 Text(
                     text = post.content,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 3
                 )
             }
 
-            // Optional image or placeholder with rounded corners and subtle elevation
+            // Post image (if present) or nice placeholder
             val imageShape = RoundedCornerShape(12.dp)
             if (!post.imageUrl.isNullOrBlank()) {
-                ElevatedCard(
-                    shape = imageShape,
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 180.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Image", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                AsyncImage(
+                    model = post.imageUrl,
+                    contentDescription = "post image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp)
+                        .clip(imageShape)
+                        .background(MaterialTheme.colorScheme.surface)
+                )
             } else {
-                ElevatedCard(
-                    shape = imageShape,
-                    colors = CardDefaults.elevatedCardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .clip(imageShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("No image", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("No image", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
-            // Actions: Willing (left) + Comment (right)
+            // Actions row: Willing (left) + Comments (right)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
+                OutlinedButton(
                     onClick = onWilling,
                     shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
                     ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp, pressedElevation = 6.dp)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Willing")
                 }
 
-                OutlinedButton(
-                    onClick = { /* no-op */ },
-                    shape = RoundedCornerShape(24.dp)
+                Button(
+                    onClick = onCommentClick,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ChatBubbleOutline,
-                        contentDescription = "Comments"
-                    )
+                    Icon(imageVector = Icons.Outlined.ChatBubbleOutline, contentDescription = "Comments")
                     Spacer(Modifier.width(8.dp))
-                    Text(text = "${post.comments}")
+                    Text(text = "Comments (${post.comments})")
                 }
             }
         }
     }
 }
 
-@Composable
-private fun Avatar(username: String) {
-    val sizeDp = 40.dp
-    Box(
-        modifier = Modifier
-            .size(sizeDp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.secondaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        // Initials placeholder
-        val initial = username.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-        Text(
-            initial,
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    }
-}
-
+// Previews updated to pass comments
 @Preview(showBackground = true, name = "FeedScreenPreview")
 @Composable
 fun FeedScreenPreview() {
@@ -281,8 +330,13 @@ fun FeedScreenPreview() {
         )
     )
 
+    val sampleComments = listOf(
+        Comment(id = "c1", postId = "1", author = "Ayesha", text = "I can help look for the cat near the market.", timestamp = "5m"),
+        Comment(id = "c2", postId = "1", author = "Rafi", text = "I saw a similar cat yesterday.", timestamp = "10m")
+    )
+
     NeighborhoodHelperTheme(dynamicColor = false) {
-        FeedContent(posts = samplePosts, onWilling = { }, onPostClick = { })
+        FeedContent(posts = samplePosts, comments = sampleComments, onWilling = { }, onAddComment = { _, _, _ -> }, onPostClick = { })
     }
 }
 
@@ -323,7 +377,7 @@ fun FeedScreenStyledPreview() {
     )
 
     NeighborhoodHelperTheme(dynamicColor = false) {
-        FeedContent(posts = samplePosts, onWilling = { }, onPostClick = { })
+        FeedContent(posts = samplePosts, comments = emptyList(), onWilling = { }, onAddComment = { _, _, _ -> }, onPostClick = { })
     }
 }
 
@@ -364,6 +418,6 @@ fun FeedScreenDeepStyledPreview() {
     )
 
     NeighborhoodHelperTheme(dynamicColor = false) {
-        FeedContent(posts = samplePosts, onWilling = { }, onPostClick = { })
+        FeedContent(posts = samplePosts, comments = emptyList(), onWilling = { }, onAddComment = { _, _, _ -> }, onPostClick = { })
     }
 }

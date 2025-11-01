@@ -11,5 +11,6 @@ data class Post(
     val content: String,
     val imageUrl: String?,
     val likes: Int,
-    val comments: Int
+    val comments: Int,
+    val location: String? = null
 )
