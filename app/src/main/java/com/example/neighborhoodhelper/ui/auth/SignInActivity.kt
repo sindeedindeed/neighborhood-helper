@@ -1,6 +1,8 @@
 package com.example.neighborhoodhelper.ui.auth
 
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,21 +30,196 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.launch
 
 class SignInActivity : ComponentActivity() {
+
+    private lateinit var auth: FirebaseAuth
+    private lateinit var credentialManager: CredentialManager
+
+    companion object {
+        private const val TAG = "SignInActivity"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        auth = FirebaseAuth.getInstance()
+        credentialManager = CredentialManager.create(this)
+
         setContent {
-            SignInScreen()
+            SignInScreen(
+                onGoogleSignInClick = { signInWithGoogle() },
+                onEmailSignIn = { email, password -> signInWithEmail(email, password) }
+            )
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        auth.currentUser?.let { updateUI(it) }
+    }
+
+    private fun signInWithGoogle() {
+        val googleIdOption = GetGoogleIdOption.Builder()
+            .setFilterByAuthorizedAccounts(false)
+            .setServerClientId(getString(com.example.neighborhoodhelper.R.string.default_web_client_id))
+            .build()
+
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(googleIdOption)
+            .build()
+
+        kotlinx.coroutines.MainScope().launch {
+            try {
+                val result = credentialManager.getCredential(request = request, context = this@SignInActivity)
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
+                firebaseAuthWithGoogle(googleIdTokenCredential.idToken)
+            } catch (e: GetCredentialException) {
+                showError("Google sign in failed", e)
+            } catch (e: Exception) {
+                showError("An error occurred", e)
+            }
+        }
+    }
+
+    private fun firebaseAuthWithGoogle(idToken: String) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener(this) { task ->
+                processAuthResult(task, "signInWithCredential")
+            }
+    }
+
+    private fun signInWithEmail(email: String, password: String) {
+        if (email.isBlank() || password.isBlank()) {
+            Toast.makeText(this, "Please enter email and password", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        auth.signInWithEmailAndPassword(email, password)
+            .addOnCompleteListener(this) { task ->
+                processAuthResult(task, "signInWithEmail")
+            }
+    }
+
+    private fun processAuthResult(task: com.google.android.gms.tasks.Task<com.google.firebase.auth.AuthResult>, method: String) {
+        if (task.isSuccessful) {
+            Log.d(TAG, "$method:success")
+            updateUI(auth.currentUser)
+        } else {
+            Log.w(TAG, "$method:failure", task.exception)
+            showToast("Authentication failed: ${task.exception?.message}")
+            updateUI(null)
+        }
+    }
+
+    private fun showError(message: String, exception: Exception) {
+        Log.w(TAG, message, exception)
+        showToast("$message: ${exception.message}")
+    }
+
+    private fun showToast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateUI(user: FirebaseUser?) {
+        user?.let {
+            showToast("Welcome ${it.displayName ?: it.email}!")
+            Log.d(TAG, "User Info: Display Name: ${it.displayName}, Email: ${it.email}, UID: ${it.uid}")
+            startActivity(Intent(this, com.example.neighborhoodhelper.MainActivity::class.java))
+            finish()
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+private val textFieldColors
+    @Composable
+    get() = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Color(0xFF6C63FF),
+        unfocusedBorderColor = Color(0xFFE0E0E0),
+        focusedTextColor = Color.Black,
+        unfocusedTextColor = Color.Black,
+        cursorColor = Color(0xFF6C63FF)
+    )
+
 @Composable
-fun SignInScreen() {
+private fun FieldLabel(text: String) {
+    Text(
+        text = text,
+        fontSize = 15.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color(0xFF1A1A1A),
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun AuthTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    keyboardType: KeyboardType,
+    isPassword: Boolean = false,
+    passwordVisible: Boolean = false,
+    onPasswordVisibilityToggle: () -> Unit = {}
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = if (isPassword) 12.dp else 20.dp),
+        placeholder = {
+            Text(
+                placeholder,
+                color = Color(0xFFAAAAAA),
+                fontSize = 14.sp
+            )
+        },
+        visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
+        trailingIcon = {
+            when {
+                isPassword -> {
+                    val icon = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                    IconButton(onClick = onPasswordVisibilityToggle) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = "Toggle password visibility",
+                            tint = Color(0xFF9E9E9E)
+                        )
+                    }
+                }
+                keyboardType == KeyboardType.Email -> Icon(
+                    Icons.Default.Email,
+                    "Email",
+                    tint = Color(0xFF9E9E9E)
+                )
+            }
+        },
+        shape = RoundedCornerShape(10.dp),
+        colors = textFieldColors,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SignInScreen(
+    onGoogleSignInClick: () -> Unit = {},
+    onEmailSignIn: (String, String) -> Unit = { _, _ -> }
+) {
     val context = LocalContext.current
-    var email by remember { mutableStateOf("johndio@gmail.com") }
+    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var keepMeSignedIn by remember { mutableStateOf(false) }
@@ -51,201 +228,141 @@ fun SignInScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            .padding(24.dp),
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.Start
     ) {
+        Spacer(modifier = Modifier.height(50.dp))
 
-        Spacer(modifier = Modifier.height(60.dp))
-
-        // Title
         Text(
-            text = "Sign In",
-            fontSize = 32.sp,
+            "Sign In",
+            fontSize = 30.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.Black,
+            color = Color(0xFF1A1A1A),
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // Subtitle
         Text(
-            text = "Let's sign in with your account",
-            fontSize = 16.sp,
-            color = Color.Gray,
-            modifier = Modifier.padding(bottom = 40.dp)
+            "Let's sign in with your account",
+            fontSize = 15.sp,
+            color = Color(0xFF7D7D7D),
+            modifier = Modifier.padding(bottom = 32.dp)
         )
 
-        // Email Field
-        Text(
-            text = "Email",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color.Black,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        FieldLabel("Email")
+        AuthTextField(username, { username = it }, "Enter your email", KeyboardType.Email)
 
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            placeholder = { Text("johndio@gmail.com") },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Email,
-                    contentDescription = "Email",
-                    tint = Color.Gray
-                )
-            },
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF6C63FF),
-                unfocusedBorderColor = Color(0xFFE5E5E5),
-                focusedTextColor = Color.Black,
-                unfocusedTextColor = Color.Black
-            ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
-        )
+        FieldLabel("Password")
+        AuthTextField(
+            password,
+            { password = it },
+            "Enter your password",
+            KeyboardType.Password,
+            true,
+            passwordVisible
+        ) { passwordVisible = !passwordVisible }
 
-        // Password Field
-        Text(
-            text = "Password",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color.Black,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            placeholder = { Text("••••••••••••") },
-            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                val image = if (passwordVisible)
-                    Icons.Default.Visibility
-                else Icons.Default.VisibilityOff
-
-                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                    Icon(imageVector = image, contentDescription = "Toggle password visibility", tint = Color.Gray)
-                }
-            },
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF6C63FF),
-                unfocusedBorderColor = Color(0xFFE5E5E5),
-                focusedTextColor = Color.Black,
-                unfocusedTextColor = Color.Black
-            ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-        )
-
-        // Keep me signed in & Forgot password row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 32.dp),
+                .padding(bottom = 28.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
-                    checked = keepMeSignedIn,
-                    onCheckedChange = { keepMeSignedIn = it },
+                    keepMeSignedIn,
+                    { keepMeSignedIn = it },
                     colors = CheckboxDefaults.colors(
-                        checkedColor = Color(0xFF6C63FF)
+                        checkedColor = Color(0xFF6C63FF),
+                        uncheckedColor = Color(0xFFBDBDBD)
                     )
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "Keep me sign In",
-                    fontSize = 14.sp,
-                    color = Color.Black
+                    "Keep me sign In",
+                    fontSize = 13.sp,
+                    color = Color(0xFF1A1A1A)
                 )
             }
 
             Text(
-                text = "Forgot password?",
-                fontSize = 14.sp,
-                color = Color.Gray,
+                "Forgot password?",
+                fontSize = 13.sp,
+                color = Color(0xFF9E9E9E),
                 modifier = Modifier.clickable {
-                    Toast.makeText(context, "Forgot password clicked!", Toast.LENGTH_SHORT).show()
+                    if (username.isBlank()) {
+                        Toast.makeText(context, "Please enter your email first", Toast.LENGTH_SHORT).show()
+                    } else {
+                        context.startActivity(Intent(context as ComponentActivity, ForgotPasswordActivity::class.java).apply {
+                            putExtra("username", username)
+                        })
+                    }
                 }
             )
         }
 
-        // Sign In Button
         Button(
-            onClick = {
-                Toast.makeText(context, "Sign In clicked!", Toast.LENGTH_SHORT).show()
-            },
+            onClick = { onEmailSignIn(username, password) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF6C63FF)
-            ),
-            shape = RoundedCornerShape(12.dp)
+                .height(54.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
+            shape = RoundedCornerShape(10.dp),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
         ) {
             Text(
-                text = "Sign In",
+                "Sign In",
                 fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = Color.White
             )
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // Or sign in with
         Text(
-            text = "Or, sign in with",
-            fontSize = 14.sp,
-            color = Color.Gray,
+            "Or, sign in with",
+            fontSize = 13.sp,
+            color = Color(0xFF9E9E9E),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 16.dp),
             textAlign = TextAlign.Center
         )
 
-        // Google Sign In Button
         OutlinedButton(
-            onClick = {
-                Toast.makeText(context, "Google Sign In clicked!", Toast.LENGTH_SHORT).show()
-            },
+            onClick = onGoogleSignInClick,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(54.dp),
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color.Black
+                contentColor = Color.Black,
+                containerColor = Color.Transparent
             ),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color.Gray)
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, Color(0xFFE0E0E0))
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                // Google icon placeholder (you can add actual Google icon here)
                 Text(
-                    text = "G",
-                    fontSize = 18.sp,
+                    "G",
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF4285F4),
                     modifier = Modifier.padding(end = 8.dp)
                 )
                 Text(
-                    text = "Sign in with Google",
-                    fontSize = 16.sp,
-                    color = Color.Black
+                    "Sign in with Google",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1A1A1A)
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 

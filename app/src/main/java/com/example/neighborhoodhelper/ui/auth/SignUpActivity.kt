@@ -27,22 +27,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.Timestamp
+import android.util.Log
 
 class SignUpActivity : ComponentActivity() {
+    private lateinit var auth: FirebaseAuth
+    private lateinit var firestore: FirebaseFirestore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize Firebase
+        auth = FirebaseAuth.getInstance()
+        firestore = FirebaseFirestore.getInstance()
+
         setContent {
-            SignUpScreen()
+            SignUpScreen(auth, firestore)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignUpScreen() {
+fun SignUpScreen(
+    auth: FirebaseAuth = FirebaseAuth.getInstance(),
+    firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+) {
     val context = LocalContext.current
 
     // Form states
@@ -59,6 +73,9 @@ fun SignUpScreen() {
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
 
+    // Loading state
+    var isLoading by remember { mutableStateOf(false) }
+
     // Form validation - check if all fields are filled
     val isFormValid = firstName.isNotBlank() &&
             lastName.isNotBlank() &&
@@ -67,7 +84,23 @@ fun SignUpScreen() {
             confirmPassword.isNotBlank() &&
             phoneNumber.isNotBlank() &&
             nid.isNotBlank() &&
-            password == confirmPassword
+            password == confirmPassword &&
+            password.length >= 6
+
+    // Debug logging
+    LaunchedEffect(firstName, lastName, username, password, confirmPassword, phoneNumber, nid) {
+        Log.d("SignUpValidation", """
+            First Name: ${firstName.isNotBlank()}
+            Last Name: ${lastName.isNotBlank()}
+            Username: ${username.isNotBlank()}
+            Password: ${password.isNotBlank()} (length: ${password.length})
+            Confirm Password: ${confirmPassword.isNotBlank()}
+            Passwords Match: ${password == confirmPassword}
+            Phone: ${phoneNumber.isNotBlank()}
+            NID: ${nid.isNotBlank()}
+            Form Valid: $isFormValid
+        """.trimIndent())
+    }
 
     Column(
         modifier = Modifier
@@ -104,7 +137,7 @@ fun SignUpScreen() {
             )
         }
 
-        // STATIC CONTENT (NO SCROLLING)
+        // MAIN CONTENT
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -144,6 +177,7 @@ fun SignUpScreen() {
                     placeholder = { Text("First Name") },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
+                    enabled = !isLoading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
                         unfocusedBorderColor = Color(0xFFE5E5E5),
@@ -160,6 +194,7 @@ fun SignUpScreen() {
                     placeholder = { Text("Last Name") },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
+                    enabled = !isLoading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
                         unfocusedBorderColor = Color(0xFFE5E5E5),
@@ -186,6 +221,7 @@ fun SignUpScreen() {
                     )
                 },
                 shape = RoundedCornerShape(12.dp),
+                enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF6C63FF),
                     unfocusedBorderColor = Color(0xFFE5E5E5),
@@ -199,7 +235,7 @@ fun SignUpScreen() {
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("Password") },
-                placeholder = { Text("Password") },
+                placeholder = { Text("Password (min 6 characters)") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 12.dp),
@@ -214,6 +250,7 @@ fun SignUpScreen() {
                     }
                 },
                 shape = RoundedCornerShape(12.dp),
+                enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF6C63FF),
                     unfocusedBorderColor = Color(0xFFE5E5E5),
@@ -243,6 +280,7 @@ fun SignUpScreen() {
                     }
                 },
                 shape = RoundedCornerShape(12.dp),
+                enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = if (password != confirmPassword && confirmPassword.isNotBlank())
                         Color.Red else Color(0xFF6C63FF),
@@ -279,6 +317,7 @@ fun SignUpScreen() {
                     onValueChange = { },
                     modifier = Modifier.width(100.dp),
                     readOnly = true,
+                    enabled = !isLoading,
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
@@ -310,6 +349,7 @@ fun SignUpScreen() {
                         )
                     },
                     shape = RoundedCornerShape(12.dp),
+                    enabled = !isLoading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
                         unfocusedBorderColor = Color(0xFFE5E5E5),
@@ -330,6 +370,7 @@ fun SignUpScreen() {
                     .fillMaxWidth()
                     .padding(bottom = 24.dp),
                 shape = RoundedCornerShape(12.dp),
+                enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF6C63FF),
                     unfocusedBorderColor = Color(0xFFE5E5E5),
@@ -339,43 +380,110 @@ fun SignUpScreen() {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
 
-            // Continue Button (enabled only when form is valid) - UPDATED
+            // Continue Button with Firebase Integration
             Button(
                 onClick = {
-                    if (isFormValid) {
-                        // Navigate to OTP Verification Activity
-                        val intent = Intent(context, OTPVerificationActivity::class.java).apply {
-                            putExtra("PHONE_NUMBER", phoneNumber)
-                            putExtra("COUNTRY_CODE", countryCode)
-                            // Pass other data if needed for later use
-                            putExtra("FIRST_NAME", firstName)
-                            putExtra("LAST_NAME", lastName)
-                            putExtra("USERNAME", username)
-                            putExtra("PASSWORD", password)
-                            putExtra("NID", nid)
-                        }
-                        context.startActivity(intent)
+                    if (isFormValid && !isLoading) {
+                        isLoading = true
 
-                        // Show OTP sent message
-                        Toast.makeText(context, "OTP sent to $countryCode $phoneNumber", Toast.LENGTH_LONG).show()
+                        Log.d("SignUpFirebase", "Starting Firebase registration...")
+
+                        // Create email from username for Firebase Auth
+                        val email = "$username@neighborhoodhelper.com"
+
+                        Log.d("SignUpFirebase", "Creating user with email: $email")
+
+                        // Create user with Firebase Authentication
+                        auth.createUserWithEmailAndPassword(email, password)
+                            .addOnCompleteListener { task ->
+                                if (task.isSuccessful) {
+                                    // Get the user ID
+                                    val userId = auth.currentUser?.uid ?: ""
+
+                                    Log.d("SignUpFirebase", "User created successfully with ID: $userId")
+
+                                    // Create user data map
+                                    val userData = hashMapOf(
+                                        "firstName" to firstName,
+                                        "lastName" to lastName,
+                                        "username" to username,
+                                        "phoneNumber" to "$countryCode$phoneNumber",
+                                        "countryCode" to countryCode,
+                                        "nid" to nid,
+                                        "email" to email,
+                                        "createdAt" to Timestamp.now()
+                                    )
+
+                                    Log.d("SignUpFirebase", "Saving user data to Firestore...")
+
+                                    // Save user data to Firestore
+                                    firestore.collection("users")
+                                        .document(userId)
+                                        .set(userData)
+                                        .addOnSuccessListener {
+                                            isLoading = false
+                                            Log.d("SignUpFirebase", "User data saved successfully!")
+                                            Toast.makeText(
+                                                context,
+                                                "Account created successfully!",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+
+                                            // Navigate to main activity or home screen
+                                            // Replace MainActivity with your actual main activity
+                                            // val intent = Intent(context, MainActivity::class.java)
+                                            // context.startActivity(intent)
+
+                                            if (context is ComponentActivity) {
+                                                context.finish()
+                                            }
+                                        }
+                                        .addOnFailureListener { e ->
+                                            isLoading = false
+                                            Log.e("SignUpFirebase", "Error saving user data: ${e.message}")
+                                            Toast.makeText(
+                                                context,
+                                                "Error saving user data: ${e.message}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                } else {
+                                    isLoading = false
+                                    Log.e("SignUpFirebase", "Registration failed: ${task.exception?.message}")
+                                    Toast.makeText(
+                                        context,
+                                        "Registration failed: ${task.exception?.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                    } else {
+                        Log.d("SignUpFirebase", "Form is not valid or already loading")
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = isFormValid,
+                enabled = isFormValid && !isLoading,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isFormValid) Color(0xFF6C63FF) else Color.Gray,
                     disabledContainerColor = Color.Gray
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(
-                    text = "Continue",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White
+                    )
+                } else {
+                    Text(
+                        text = "Continue",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -396,21 +504,16 @@ fun SignUpScreen() {
                     color = Color(0xFF6C63FF),
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clickable {
-                        // Navigate back to SignIn
-                        val intent = Intent(context, SignInActivity::class.java)
-                        context.startActivity(intent)
-                        if (context is ComponentActivity) {
-                            context.finish()
+                        if (!isLoading) {
+                            val intent = Intent(context, SignInActivity::class.java)
+                            context.startActivity(intent)
+                            if (context is ComponentActivity) {
+                                context.finish()
+                            }
                         }
                     }
                 )
             }
         }
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SignUpScreenPreview() {
-    SignUpScreen()
 }

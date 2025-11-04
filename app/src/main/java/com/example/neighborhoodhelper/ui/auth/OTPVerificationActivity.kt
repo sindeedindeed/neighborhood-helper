@@ -1,5 +1,6 @@
 package com.example.neighborhoodhelper.ui.auth
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -35,30 +36,89 @@ class OTPVerificationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Get phone number from Intent
-        val phoneNumber = intent.getStringExtra("PHONE_NUMBER") ?: "XXXXXXXXX"
-        val countryCode = intent.getStringExtra("COUNTRY_CODE") ?: "+880"
+        // Get data from Intent
+        val verificationMethod = intent.getStringExtra("verification_method") ?: "phone"
+        val verificationValue = intent.getStringExtra("verification_value") ?: ""
+        val verificationPurpose = intent.getStringExtra("verification_purpose") ?: "registration"
+
+        // Legacy support for old registration flow
+        val phoneNumber = intent.getStringExtra("PHONE_NUMBER")
+        val countryCode = intent.getStringExtra("COUNTRY_CODE")
+
+        val displayValue = if (phoneNumber != null && countryCode != null) {
+            "$countryCode $phoneNumber"
+        } else {
+            verificationValue
+        }
 
         setContent {
-            OTPVerificationScreen(phoneNumber = "$countryCode $phoneNumber")
+            OTPVerificationScreen(
+                verificationMethod = verificationMethod,
+                verificationValue = displayValue,
+                verificationPurpose = verificationPurpose,
+                onOTPVerified = {
+                    when (verificationPurpose) {
+                        "forgot_password" -> {
+                            // Navigate to Reset Password page
+                            val intent = Intent(this, ResetPasswordActivity::class.java).apply {
+                                putExtra("verification_method", verificationMethod)
+                                putExtra("verification_value", verificationValue)
+                            }
+                            startActivity(intent)
+                            finish()
+                        }
+                        "registration" -> {
+                            // Registration flow - go to main app or next step
+                            Toast.makeText(this, "Registration Successful!", Toast.LENGTH_SHORT).show()
+                            finish()
+                        }
+                    }
+                },
+                onBackClick = { finish() }
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
+fun OTPVerificationScreen(
+    verificationMethod: String = "phone",
+    verificationValue: String = "+880 1234567890",
+    verificationPurpose: String = "registration",
+    onOTPVerified: () -> Unit = {},
+    onBackClick: () -> Unit = {}
+) {
     val context = LocalContext.current
 
-    // OTP state - 6 digits
     var otpValue by remember { mutableStateOf("") }
     val otpLength = 6
 
-    // Focus requesters for each OTP field
     val focusRequesters = remember { List(otpLength) { FocusRequester() } }
 
-    // Validation
     val isOtpComplete = otpValue.length == otpLength
+
+    // Dynamic text based on purpose and method
+    val title = when (verificationPurpose) {
+        "forgot_password" -> "Verify Your Identity"
+        else -> "OTP Verification"
+    }
+
+    val subtitle = when {
+        verificationMethod == "email" && verificationPurpose == "forgot_password" ->
+            "Enter the OTP sent to your email\n$verificationValue"
+        verificationMethod == "phone" && verificationPurpose == "forgot_password" ->
+            "Enter the OTP sent to\n$verificationValue"
+        verificationMethod == "email" ->
+            "Enter the OTP sent to your email\n$verificationValue"
+        else ->
+            "Enter the OTP sent to $verificationValue"
+    }
+
+    val emoji = when (verificationMethod) {
+        "email" -> "✉️"
+        else -> "📱"
+    }
 
     Column(
         modifier = Modifier
@@ -67,13 +127,8 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
             .padding(24.dp)
     ) {
 
-        // Back Button
         IconButton(
-            onClick = {
-                if (context is ComponentActivity) {
-                    context.finish()
-                }
-            },
+            onClick = { onBackClick() },
             modifier = Modifier.padding(bottom = 32.dp)
         ) {
             Icon(
@@ -83,7 +138,6 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
             )
         }
 
-        // OTP Illustration Placeholder
         Box(
             modifier = Modifier
                 .size(200.dp)
@@ -92,15 +146,14 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "📱",
+                text = emoji,
                 fontSize = 80.sp,
                 textAlign = TextAlign.Center
             )
         }
 
-        // Title
         Text(
-            text = "OTP Verification",
+            text = title,
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Black,
@@ -110,18 +163,17 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
                 .padding(bottom = 8.dp)
         )
 
-        // Subtitle
         Text(
-            text = "Enter the OTP sent to $phoneNumber",
+            text = subtitle,
             fontSize = 14.sp,
             color = Color.Gray,
             textAlign = TextAlign.Center,
+            lineHeight = 20.sp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 40.dp)
         )
 
-        // OTP Input Fields
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -135,16 +187,13 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
                         val newOtp = otpValue.toMutableList()
 
                         if (newDigit.isEmpty() && index < otpValue.length) {
-                            // Handle backspace
                             newOtp.removeAt(index)
                             otpValue = newOtp.joinToString("")
 
-                            // Move focus to previous field
                             if (index > 0) {
                                 focusRequesters[index - 1].requestFocus()
                             }
                         } else if (newDigit.isNotEmpty() && newDigit.last().isDigit()) {
-                            // Handle digit input
                             if (index < newOtp.size) {
                                 newOtp[index] = newDigit.last()
                             } else {
@@ -152,7 +201,6 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
                             }
                             otpValue = newOtp.joinToString("")
 
-                            // Move focus to next field
                             if (index < otpLength - 1) {
                                 focusRequesters[index + 1].requestFocus()
                             }
@@ -164,14 +212,10 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
             }
         }
 
-        // Submit Button
         Button(
             onClick = {
                 if (isOtpComplete) {
-                    Toast.makeText(context, "OTP Verified Successfully!", Toast.LENGTH_SHORT).show()
-                    if (context is ComponentActivity) {
-                        context.finish()
-                    }
+                    onOTPVerified()
                 }
             },
             modifier = Modifier
@@ -185,7 +229,7 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                text = "Submit",
+                text = if (verificationPurpose == "forgot_password") "Verify & Continue" else "Submit",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color.White
@@ -194,7 +238,6 @@ fun OTPVerificationScreen(phoneNumber: String = "+880 1234567890") {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Resend OTP
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center
