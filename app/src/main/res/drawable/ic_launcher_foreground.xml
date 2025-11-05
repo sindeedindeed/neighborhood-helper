@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foreground vector drawable for the app launcher icon. Simple house+heart-like shape for Neighborhood Helper. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Background circle (transparent - actual background provided by adaptive icon background) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,6
+            a48,48 0 1,0 0,96
+            a48,48 0 1,0 0,-96z"
+        android:fillAlpha="0" />
+
+    <!-- Simple home shape -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#BB000000"
+        android:strokeWidth="1"
+        android:pathData="M24,54 L54,28 L84,54 L84,84 L24,84 z"/>
+
+    <!-- Heart inside the house to indicate help/neighborhood -->
+    <path
+        android:fillColor="#FF5252"
+        android:pathData="M54,64
+            C52,60 48,58 44,58
+            C36,58 34,64 34,64
+            C34,72 44,78 54,86
+            C64,78 74,72 74,64
+            C74,64 72,58 64,58
+            C60,58 56,60 54,64z"/>
+</vector>
