@@ -82,11 +82,11 @@ fun CreatePostScreen(
                             .size(48.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                            Text(text = "JD", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(text = "MN", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(text = "John Doe", fontWeight = FontWeight.SemiBold)
+                            Text(text = "Maishan Nadis", fontWeight = FontWeight.SemiBold)
                             Text(text = "Public", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
