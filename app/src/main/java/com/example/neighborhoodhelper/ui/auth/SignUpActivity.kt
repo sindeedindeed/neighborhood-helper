@@ -8,11 +8,14 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Visibility
@@ -58,11 +61,13 @@ fun SignUpScreen(
     firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
     // Form states
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
@@ -76,10 +81,17 @@ fun SignUpScreen(
     // Loading state
     var isLoading by remember { mutableStateOf(false) }
 
+    // Email validation helper
+    fun isValidEmail(email: String): Boolean {
+        return android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
+    }
+
     // Form validation - check if all fields are filled
     val isFormValid = firstName.isNotBlank() &&
             lastName.isNotBlank() &&
             username.isNotBlank() &&
+            email.isNotBlank() &&
+            isValidEmail(email) &&
             password.isNotBlank() &&
             confirmPassword.isNotBlank() &&
             phoneNumber.isNotBlank() &&
@@ -88,11 +100,12 @@ fun SignUpScreen(
             password.length >= 6
 
     // Debug logging
-    LaunchedEffect(firstName, lastName, username, password, confirmPassword, phoneNumber, nid) {
+    LaunchedEffect(firstName, lastName, username, email, password, confirmPassword, phoneNumber, nid) {
         Log.d("SignUpValidation", """
             First Name: ${firstName.isNotBlank()}
             Last Name: ${lastName.isNotBlank()}
             Username: ${username.isNotBlank()}
+            Email: ${email.isNotBlank()} (Valid: ${isValidEmail(email)})
             Password: ${password.isNotBlank()} (length: ${password.length})
             Confirm Password: ${confirmPassword.isNotBlank()}
             Passwords Match: ${password == confirmPassword}
@@ -107,7 +120,7 @@ fun SignUpScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // TOP BAR WITH BACK BUTTON AND TITLE
+        // TOP BAR WITH BACK BUTTON AND TITLE (Fixed - Not scrollable)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -137,16 +150,17 @@ fun SignUpScreen(
             )
         }
 
-        // MAIN CONTENT
+        // MAIN CONTENT (Scrollable)
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp)
         ) {
 
             // Title with emoji
             Text(
-                text = "Getting Started\nwith Neighborhood Helper! 🏠",
+                text = "Getting Started",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.Black,
@@ -156,7 +170,7 @@ fun SignUpScreen(
 
             // Subtitle
             Text(
-                text = "Alright, Now Let's Get to Know You!",
+                text = "With Neighborhood Helper",
                 fontSize = 14.sp,
                 color = Color.Gray,
                 modifier = Modifier.padding(bottom = 20.dp)
@@ -229,6 +243,46 @@ fun SignUpScreen(
                     unfocusedTextColor = Color.Black
                 )
             )
+
+            // Email Field
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                placeholder = { Text("email@example.com") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = if (!isValidEmail(email) && email.isNotBlank()) 4.dp else 12.dp),
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Email,
+                        contentDescription = "Email",
+                        tint = Color.Gray
+                    )
+                },
+                shape = RoundedCornerShape(12.dp),
+                enabled = !isLoading,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = if (!isValidEmail(email) && email.isNotBlank())
+                        Color.Red else Color(0xFF6C63FF),
+                    unfocusedBorderColor = if (!isValidEmail(email) && email.isNotBlank())
+                        Color.Red else Color(0xFFE5E5E5),
+                    focusedTextColor = Color.Black,
+                    unfocusedTextColor = Color.Black
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                isError = !isValidEmail(email) && email.isNotBlank()
+            )
+
+            // Show email validation error
+            if (!isValidEmail(email) && email.isNotBlank()) {
+                Text(
+                    text = "Please enter a valid email address",
+                    color = Color.Red,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                )
+            }
 
             // Password Field
             OutlinedTextField(
@@ -387,13 +441,9 @@ fun SignUpScreen(
                         isLoading = true
 
                         Log.d("SignUpFirebase", "Starting Firebase registration...")
-
-                        // Create email from username for Firebase Auth
-                        val email = "$username@neighborhoodhelper.com"
-
                         Log.d("SignUpFirebase", "Creating user with email: $email")
 
-                        // Create user with Firebase Authentication
+                        // Create user with Firebase Authentication using the actual email
                         auth.createUserWithEmailAndPassword(email, password)
                             .addOnCompleteListener { task ->
                                 if (task.isSuccessful) {
@@ -407,10 +457,10 @@ fun SignUpScreen(
                                         "firstName" to firstName,
                                         "lastName" to lastName,
                                         "username" to username,
+                                        "email" to email,
                                         "phoneNumber" to "$countryCode$phoneNumber",
                                         "countryCode" to countryCode,
                                         "nid" to nid,
-                                        "email" to email,
                                         "createdAt" to Timestamp.now()
                                     )
 
@@ -490,7 +540,9 @@ fun SignUpScreen(
 
             // Already have account text
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(

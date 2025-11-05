@@ -1,20 +1,14 @@
 package com.example.neighborhoodhelper.ui.auth
 
-import android.content.Intent
 import android.os.Bundle
+import android.util.Log
+import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,43 +16,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import com.google.firebase.auth.FirebaseAuth // Import Firebase Authentication
 
 class ForgotPasswordActivity : ComponentActivity() {
+
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var firebaseAuth: FirebaseAuth // Declare FirebaseAuth instance
+
+    companion object;
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        firestore = FirebaseFirestore.getInstance()
+        firebaseAuth = FirebaseAuth.getInstance() // Initialize FirebaseAuth
         val username = intent.getStringExtra("username") ?: ""
 
         setContent {
-            ForgotPasswordFlow(
-                username = username,
-                onBackClick = { finish() },
-                onFetchUserData = {
-                    // TODO: Implement backend API call to fetch user's registered email and phone
-                    // Example API: getUserRecoveryOptions(username)
-                    // This should return both masked and full email/phone
-
-                    // For now, return mock data
-                    UserRecoveryData(
-                        maskedEmail = "j*******o@gmail.com",
-                        maskedPhone = "+880 *******89",
-                        fullEmail = "john.doe@gmail.com",
-                        fullPhone = "+8801234567889"
-                    )
-                },
-                onSendOTP = { method, value ->
-                    val intent = Intent(this, OTPVerificationActivity::class.java).apply {
-                        putExtra("verification_method", method)
-                        putExtra("verification_value", value)
-                        putExtra("verification_purpose", "forgot_password")
+            MaterialTheme {
+                ForgotPasswordScreen(
+                    initialUsername = username,
+                    firestore = firestore,
+                    firebaseAuth = firebaseAuth, // Pass FirebaseAuth instance
+                    onBackClick = { finish() },
+                    onSuccess = {
+                        Toast.makeText(this, "Password reset email sent!", Toast.LENGTH_SHORT).show()
+                        finish()
                     }
-                    startActivity(intent)
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -71,314 +64,401 @@ data class UserRecoveryData(
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
-private val forgotPasswordTextFieldColors
-    @Composable
-    get() = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = Color(0xFF6C63FF),
-        unfocusedBorderColor = Color(0xFFE5E5E5),
-        focusedTextColor = Color.Black,
-        unfocusedTextColor = Color.Black
-    )
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("DuplicatedCode")
-fun ForgotPasswordFlow(
-    username: String = "",
-    onBackClick: () -> Unit = {},
-    onFetchUserData: () -> UserRecoveryData = {
-        UserRecoveryData("j*****o@gmail.com", "+880 *****89", "john@gmail.com", "+8801234567889")
-    },
-    onSendOTP: (method: String, value: String) -> Unit = { _, _ -> }
+fun ForgotPasswordScreen(
+    initialUsername: String,
+    firestore: FirebaseFirestore,
+    firebaseAuth: FirebaseAuth, // Receive FirebaseAuth instance
+    onBackClick: () -> Unit,
+    onSuccess: () -> Unit
 ) {
-    val context = LocalContext.current
-    var currentStep by remember { mutableStateOf(1) }
-    var userRecoveryData by remember { mutableStateOf<UserRecoveryData?>(null) }
-    var selectedMethod by remember { mutableStateOf("email") }
-    var isLoading by remember { mutableStateOf(true) }
-    var userInput by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf(initialUsername) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    var userData by remember { mutableStateOf<UserRecoveryData?>(null) }
 
-    LaunchedEffect(username) {
-        if (username.isNotEmpty()) {
-            val recoveryData = onFetchUserData()
-            userRecoveryData = recoveryData
+    val context = LocalContext.current
+
+    // Function to fetch user data from Firestore
+    fun fetchUserData() {
+        if (username.isBlank()) {
+            errorMessage = "Please enter username or email"
+            return
         }
-        isLoading = false
+
+        isLoading = true
+        errorMessage = ""
+
+        // Use lifecycleScope from ComponentActivity
+        (context as? ComponentActivity)?.lifecycleScope?.launch {
+            try {
+                // Check if input is email or username
+                val isEmail = Patterns.EMAIL_ADDRESS.matcher(username).matches()
+
+                val query = if (isEmail) {
+                    firestore.collection("users")
+                        .whereEqualTo("email", username)
+                } else {
+                    firestore.collection("users")
+                        .whereEqualTo("username", username)
+                }
+
+                val documents = query.get().await()
+
+                if (!documents.isEmpty) {
+                    val userDoc = documents.documents[0]
+                    val email = userDoc.getString("email") ?: ""
+                    val phone = userDoc.getString("phone") ?: ""
+
+                    if (email.isEmpty()) {
+                        errorMessage = "No email found for this account"
+                        isLoading = false
+                        return@launch
+                    }
+
+                    // Create masked versions
+                    userData = UserRecoveryData(
+                        maskedEmail = maskEmail(email),
+                        maskedPhone = maskPhone(phone),
+                        fullEmail = email,
+                        fullPhone = phone
+                    )
+
+                    Log.d("ForgotPassword", "User data fetched successfully from Firestore for: $email")
+                } else {
+                    errorMessage = "User not found in Firestore. Please check username or email."
+                    Log.e("ForgotPassword", "User not found in Firestore for: $username")
+                }
+
+                isLoading = false
+            } catch (e: Exception) {
+                Log.e("ForgotPassword", "Error fetching user data from Firestore: ${e.message}", e)
+                errorMessage = "Error: ${e.message}"
+                isLoading = false
+            }
+        }
     }
 
-    Column(
+    // UI
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.Start
+            .background(Color(0xFFF8F9FA))
     ) {
-        Spacer(modifier = Modifier.height(20.dp))
-
-        IconButton(
-            onClick = {
-                if (currentStep == 2) {
-                    currentStep = 1
-                    userInput = ""
-                } else {
-                    onBackClick()
-                }
-            },
-            modifier = Modifier.padding(bottom = 32.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = Color.Black
-            )
-        }
+            Spacer(modifier = Modifier.height(40.dp))
 
-        if (isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 100.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                CircularProgressIndicator(color = Color(0xFF6C63FF))
-            }
-        } else if (currentStep == 1) {
-            // Step 1: Select recovery method
+            // Header
+            Text(
+                text = "🔐",
+                fontSize = 60.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             Text(
                 text = "Forgot Password?",
-                fontSize = 32.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black,
-                modifier = Modifier.padding(bottom = 8.dp)
+                color = Color(0xFF1A1A1A)
             )
 
             Text(
-                text = "Choose where you want to receive the OTP",
-                fontSize = 16.sp,
-                color = Color.Gray,
-                lineHeight = 24.sp,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-
-            userRecoveryData?.let { data ->
-                if (data.maskedEmail.isNotEmpty()) {
-                    MethodSelectionCard(
-                        title = "Email",
-                        subtitle = data.maskedEmail,
-                        icon = Icons.Default.Email,
-                        isSelected = selectedMethod == "email",
-                        onClick = { selectedMethod = "email" }
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                if (data.maskedPhone.isNotEmpty()) {
-                    MethodSelectionCard(
-                        title = "Phone Number",
-                        subtitle = data.maskedPhone,
-                        icon = Icons.Default.Phone,
-                        isSelected = selectedMethod == "phone",
-                        onClick = { selectedMethod = "phone" }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = { currentStep = 2 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6C63FF)
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text(
-                    text = "Continue",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White
-                )
-            }
-        } else {
-            // Step 2: Enter full email/phone for verification
-            Text(
-                text = "Verify Your ${if (selectedMethod == "email") "Email" else "Phone Number"}",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Text(
-                text = "Please enter your complete ${if (selectedMethod == "email") "email address" else "phone number"} to verify it's you",
-                fontSize = 16.sp,
-                color = Color.Gray,
-                lineHeight = 24.sp,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-
-            Text(
-                text = if (selectedMethod == "email") "Email Address" else "Phone Number",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.Black,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            OutlinedTextField(
-                value = userInput,
-                onValueChange = { userInput = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                placeholder = {
-                    Text(if (selectedMethod == "email") "Enter your email" else "Enter your phone number")
-                },
-                shape = RoundedCornerShape(12.dp),
-                colors = forgotPasswordTextFieldColors,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = if (selectedMethod == "email") KeyboardType.Email else KeyboardType.Phone
-                ),
-                singleLine = true
-            )
-
-            Text(
-                text = "We'll send an OTP to this ${if (selectedMethod == "email") "email" else "number"} for verification",
+                text = "Enter your username or email to recover",
                 fontSize = 14.sp,
-                color = Color.Gray,
-                modifier = Modifier.padding(bottom = 32.dp)
+                color = Color(0xFF666666),
+                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp),
+                textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = {
-                    if (userInput.isBlank()) {
-                        Toast.makeText(
-                            context,
-                            "Please enter your ${if (selectedMethod == "email") "email" else "phone number"}",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        return@Button
-                    }
-
-                    // Verify the input matches the actual data
-                    val isValid = if (selectedMethod == "email") {
-                        userInput.equals(userRecoveryData?.fullEmail, ignoreCase = true)
-                    } else {
-                        userInput.replace(Regex("[^0-9+]"), "") ==
-                                userRecoveryData?.fullPhone?.replace(Regex("[^0-9+]"), "")
-                    }
-
-                    if (isValid) {
-                        onSendOTP(selectedMethod, userInput)
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "The ${if (selectedMethod == "email") "email" else "phone number"} doesn't match our records",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6C63FF)
-                ),
-                shape = RoundedCornerShape(12.dp)
+            // Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Text(
-                    text = "Send OTP",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
+                Column(modifier = Modifier.padding(20.dp)) {
 
-@Composable
-fun MethodSelectionCard(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .border(
-                width = 2.dp,
-                color = if (isSelected) Color(0xFF6C63FF) else Color(0xFFE5E5E5),
-                shape = RoundedCornerShape(12.dp)
-            ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) Color(0xFFF5F4FF) else Color.White
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = RoundedCornerShape(8.dp),
-                color = if (isSelected) Color(0xFF6C63FF) else Color(0xFFF5F5F5)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = title,
-                        tint = if (isSelected) Color.White else Color.Gray,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    // If no user data yet, show input field
+                    if (userData == null) {
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = {
+                                username = it
+                                errorMessage = ""
+                            },
+                            label = { Text("Username or Email") },
+                            placeholder = { Text("Enter username or email") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            enabled = !isLoading,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF6C63FF),
+                                unfocusedBorderColor = Color(0xFFE0E0E0)
+                            )
+                        )
+
+                        // Error message
+                        if (errorMessage.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFFFFEBEE)
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "⚠️", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = errorMessage,
+                                        color = Color(0xFFC62828),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Continue Button
+                        Button(
+                            onClick = { fetchUserData() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp),
+                            enabled = !isLoading && username.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF6C63FF)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(
+                                    text = "Continue",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    } else {
+                        // Show user data (masked email and phone)
+                        Text(
+                            text = "Recovery Options",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        // Email option
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFF5F5F5)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "📧 Email",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF666666)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = userData!!.maskedEmail,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        // Phone option (if available)
+                        if (userData!!.fullPhone.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFFF5F5F5)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "📱 Phone",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF666666)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = userData!!.maskedPhone,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        // Send Reset Link Button
+                        Button(
+                            onClick = {
+                                val emailToReset = userData!!.fullEmail
+                                isLoading = true
+                                errorMessage = ""
+
+                                firebaseAuth.sendPasswordResetEmail(emailToReset)
+                                    .addOnCompleteListener { task ->
+                                        isLoading = false
+                                        if (task.isSuccessful) {
+                                            Log.d("ForgotPassword", "Password reset email sent to: $emailToReset")
+                                            onSuccess() // Indicate success and finish activity
+                                        } else {
+                                            val exceptionMessage = task.exception?.message ?: "Unknown error"
+                                            errorMessage = "Failed to send reset email: $exceptionMessage"
+                                            Log.e("ForgotPassword", "Failed to send reset email: $exceptionMessage", task.exception)
+                                            Toast.makeText(
+                                                context,
+                                                "Error: $exceptionMessage",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp),
+                            enabled = !isLoading,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF6C63FF)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text(
+                                    text = "Send Reset Link",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Try Different Account
+                        TextButton(
+                            onClick = {
+                                userData = null
+                                username = initialUsername // Clear input for new attempt
+                                errorMessage = ""
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Try Different Account",
+                                color = Color(0xFF6C63FF)
+                            )
+                        }
+                        // Display error message if present after attempting to send reset email
+                        if (errorMessage.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFFFFEBEE)
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = "⚠️", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = errorMessage,
+                                        color = Color(0xFFC62828),
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column {
-                Text(
-                    text = title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.Black
-                )
-                Text(
-                    text = subtitle,
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-            }
-
             Spacer(modifier = Modifier.weight(1f))
 
-            RadioButton(
-                selected = isSelected,
-                onClick = onClick,
-                colors = RadioButtonDefaults.colors(
-                    selectedColor = Color(0xFF6C63FF),
-                    unselectedColor = Color.Gray
+            // Back to Sign In
+            TextButton(onClick = onBackClick) {
+                Text(
+                    text = "← Back to Sign In",
+                    color = Color(0xFF6C63FF),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
                 )
-            )
+            }
         }
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun ForgotPasswordFlowPreview() {
-    ForgotPasswordFlow(username = "test_user")
+// Helper function to mask email
+private fun maskEmail(email: String): String {
+    if (email.isEmpty()) return ""
+
+    val parts = email.split("@")
+    if (parts.size != 2) return email
+
+    val username = parts[0]
+    val domain = parts[1]
+
+    return when {
+        username.length <= 2 -> "${username[0]}***@$domain"
+        else -> "${username[0]}${"*".repeat(username.length - 2)}${username.last()}@$domain"
+    }
+}
+
+// Helper function to mask phone
+private fun maskPhone(phone: String): String {
+    if (phone.isEmpty()) return ""
+
+    return when {
+        phone.length <= 4 -> phone
+        phone.startsWith("+") -> {
+            val countryCode = phone.take(4) // e.g., +880
+            val lastDigits = phone.takeLast(2)
+            "$countryCode *******$lastDigits"
+        }
+        else -> {
+            val lastDigits = phone.takeLast(2)
+            "*******$lastDigits"
+        }
+    }
 }

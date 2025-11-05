@@ -33,6 +33,10 @@
                 android:name=".ui.auth.ForgotPasswordActivity"
                 android:exported="false" />
         <activity
+                android:name=".ui.auth.EmailVerificationActivity"
+                android:exported="false"
+                android:screenOrientation="portrait" />
+        <activity
                 android:name=".ui.auth.ResetPasswordActivity"
                 android:exported="false" />
     </application>
