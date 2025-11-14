@@ -37,6 +37,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
 import android.util.Log
 
+// Assume your main activity is called MainActivity.kt
+// You might not directly navigate here after signup, but after email verification and sign in.
+// import com.example.neighborhoodhelper.MainActivity
+
 class SignUpActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var firestore: FirebaseFirestore
@@ -368,7 +372,7 @@ fun SignUpScreen(
                 // Country Code Selector
                 OutlinedTextField(
                     value = countryCode,
-                    onValueChange = { },
+                    onValueChange = { /* Currently read-only, no change implemented */ },
                     modifier = Modifier.width(100.dp),
                     readOnly = true,
                     enabled = !isLoading,
@@ -438,58 +442,69 @@ fun SignUpScreen(
             Button(
                 onClick = {
                     if (isFormValid && !isLoading) {
-                        isLoading = true
+                        isLoading = true // Set loading state to true
+                        val startTime = System.currentTimeMillis()
+                        Log.d("SignUpTiming", "Start registration process. Time: ${startTime}ms")
 
                         Log.d("SignUpFirebase", "Starting Firebase registration...")
                         Log.d("SignUpFirebase", "Creating user with email: $email")
 
-                        // Create user with Firebase Authentication using the actual email
+                        // 1. Create user with Firebase Authentication
                         auth.createUserWithEmailAndPassword(email, password)
-                            .addOnCompleteListener { task ->
-                                if (task.isSuccessful) {
-                                    // Get the user ID
-                                    val userId = auth.currentUser?.uid ?: ""
+                            .addOnCompleteListener { authTask ->
+                                val authCompleteTime = System.currentTimeMillis()
+                                Log.d("SignUpTiming", "Auth createUserWithEmailAndPassword completed. Time: ${authCompleteTime}ms. Duration: ${authCompleteTime - startTime}ms")
+
+                                if (authTask.isSuccessful) {
+                                    val firebaseUser = auth.currentUser
+                                    val userId = firebaseUser?.uid ?: ""
 
                                     Log.d("SignUpFirebase", "User created successfully with ID: $userId")
 
-                                    // Create user data map
-                                    val userData = hashMapOf(
-                                        "firstName" to firstName,
-                                        "lastName" to lastName,
-                                        "username" to username,
-                                        "email" to email,
-                                        "phoneNumber" to "$countryCode$phoneNumber",
-                                        "countryCode" to countryCode,
-                                        "nid" to nid,
-                                        "createdAt" to Timestamp.now()
-                                    )
+                                    // 2. Send Email Verification (This runs in parallel and doesn't block Firestore save)
+                                    // The Toast messages related to email sending are handled by the EmailVerificationSentActivity now.
+                                    firebaseUser?.sendEmailVerification()
+                                        ?.addOnCompleteListener { emailVerificationTask ->
+                                            val emailSentTime = System.currentTimeMillis()
+                                            Log.d("SignUpTiming", "Email verification send attempt completed. Time: ${emailSentTime}ms. Duration from Auth complete: ${emailSentTime - authCompleteTime}ms")
 
-                                    Log.d("SignUpFirebase", "Saving user data to Firestore...")
+                                            if (emailVerificationTask.isSuccessful) {
+                                                Log.d("SignUpFirebase", "Verification email sent.")
+                                            } else {
+                                                Log.e("SignUpFirebase", "Failed to send verification email: ${emailVerificationTask.exception?.message}")
+                                            }
+                                        }
 
-                                    // Save user data to Firestore
-                                    firestore.collection("users")
-                                        .document(userId)
-                                        .set(userData)
-                                        .addOnSuccessListener {
-                                            isLoading = false
-                                            Log.d("SignUpFirebase", "User data saved successfully!")
-                                            Toast.makeText(
-                                                context,
-                                                "Account created successfully!",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                    // 3. Save User Data to Firestore (Always attempt this if Auth was successful)
+                                    saveUserDataToFirestore(
+                                        firestore,
+                                        userId,
+                                        firstName, lastName, username, email,
+                                        countryCode, phoneNumber, nid,
+                                        onSuccess = {
+                                            val firestoreCompleteTime = System.currentTimeMillis()
+                                            Log.d("SignUpTiming", "Firestore data save completed. Time: ${firestoreCompleteTime}ms. Duration from Auth complete: ${firestoreCompleteTime - authCompleteTime}ms")
+                                            isLoading = false // Reset loading state on success
+                                            Log.d("SignUpTiming", "Registration process finished. Total Duration: ${firestoreCompleteTime - startTime}ms")
+                                            Log.d("SignUpFirebase", "User data saved successfully! Navigating to EmailVerificationSentActivity.")
 
-                                            // Navigate to main activity or home screen
-                                            // Replace MainActivity with your actual main activity
-                                            // val intent = Intent(context, MainActivity::class.java)
-                                            // context.startActivity(intent)
-
+                                            // <--- MODIFIED NAVIGATION STARTS HERE --->
+                                            // Navigate to the EmailVerificationSentActivity
+                                            val intent = Intent(context, EmailVerificationSentActivity::class.java)
+                                            // Clear the back stack so user can't go back to SignUpActivity with back button
+                                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                            context.startActivity(intent)
+                                            // Finish the current SignUpActivity
                                             if (context is ComponentActivity) {
                                                 context.finish()
                                             }
-                                        }
-                                        .addOnFailureListener { e ->
-                                            isLoading = false
+                                            // <--- MODIFIED NAVIGATION ENDS HERE --->
+                                        },
+                                        onFailure = { e ->
+                                            val firestoreFailTime = System.currentTimeMillis()
+                                            Log.e("SignUpTiming", "Firestore data save FAILED. Time: ${firestoreFailTime}ms. Duration from Auth complete: ${firestoreFailTime - authCompleteTime}ms")
+                                            isLoading = false // Reset loading state on Firestore failure
+                                            Log.d("SignUpTiming", "Registration process finished with Firestore error. Total Duration: ${firestoreFailTime - startTime}ms")
                                             Log.e("SignUpFirebase", "Error saving user data: ${e.message}")
                                             Toast.makeText(
                                                 context,
@@ -497,24 +512,31 @@ fun SignUpScreen(
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         }
+                                    )
+
                                 } else {
-                                    isLoading = false
-                                    Log.e("SignUpFirebase", "Registration failed: ${task.exception?.message}")
+                                    isLoading = false // Reset loading state on Auth failure
+                                    Log.d("SignUpTiming", "Auth createUserWithEmailAndPassword FAILED. Total Duration: ${authCompleteTime - startTime}ms")
+                                    Log.e("SignUpFirebase", "Registration failed: ${authTask.exception?.message}")
                                     Toast.makeText(
                                         context,
-                                        "Registration failed: ${task.exception?.message}",
+                                        "Registration failed: ${authTask.exception?.message}",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }
                             }
                     } else {
                         Log.d("SignUpFirebase", "Form is not valid or already loading")
+                        // Provide more immediate feedback if form is invalid
+                        if (!isFormValid) {
+                            Toast.makeText(context, "Please fill all fields correctly.", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = isFormValid && !isLoading,
+                enabled = isFormValid && !isLoading, // Button enabled only if form is valid and not loading
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isFormValid) Color(0xFF6C63FF) else Color.Gray,
                     disabledContainerColor = Color.Gray
@@ -556,7 +578,7 @@ fun SignUpScreen(
                     color = Color(0xFF6C63FF),
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clickable {
-                        if (!isLoading) {
+                        if (!isLoading) { // Prevent navigation while loading
                             val intent = Intent(context, SignInActivity::class.java)
                             context.startActivity(intent)
                             if (context is ComponentActivity) {
@@ -568,4 +590,38 @@ fun SignUpScreen(
             }
         }
     }
+}
+
+// Helper function to save user data to Firestore
+// Add this function outside of SignUpScreen, for example, just below it or at the end of the file.
+private fun saveUserDataToFirestore(
+    firestore: FirebaseFirestore,
+    userId: String,
+    firstName: String,
+    lastName: String,
+    username: String,
+    email: String,
+    countryCode: String,
+    phoneNumber: String,
+    nid: String,
+    onSuccess: () -> Unit,
+    onFailure: (Exception) -> Unit
+) {
+    val userData = hashMapOf(
+        "firstName" to firstName,
+        "lastName" to lastName,
+        "username" to username,
+        "email" to email,
+        "phoneNumber" to "$countryCode$phoneNumber",
+        "countryCode" to countryCode,
+        "nid" to nid,
+        "createdAt" to Timestamp.now(),
+        "emailVerified" to false // New field to track if email is verified
+    )
+
+    firestore.collection("users")
+        .document(userId)
+        .set(userData)
+        .addOnSuccessListener { onSuccess() }
+        .addOnFailureListener { e -> onFailure(e) }
 }

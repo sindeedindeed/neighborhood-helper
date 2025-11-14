@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -34,10 +33,9 @@ class ResetPasswordActivity : ComponentActivity() {
 
         setContent {
             ResetPasswordScreen(
-                onPasswordReset = { newPassword ->
+                onPasswordReset = { _ ->
                     // Get verification details for backend API call
-                    val verificationMethod = intent.getStringExtra("verification_method") ?: "phone"
-                    val verificationValue = intent.getStringExtra("verification_value") ?: ""
+                    intent.getStringExtra("verification_method") ?: "phone"
 
                     // TODO: Implement backend API call here
                     // Example: resetPasswordAPI(verificationMethod, verificationValue, newPassword)
@@ -59,7 +57,6 @@ class ResetPasswordActivity : ComponentActivity() {
 fun ResetPasswordScreen(
     onPasswordReset: (String) -> Unit = {}
 ) {
-    val context = LocalContext.current
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var newPasswordVisible by remember { mutableStateOf(false) }

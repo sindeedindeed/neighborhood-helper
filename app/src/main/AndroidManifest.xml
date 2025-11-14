@@ -32,10 +32,12 @@
         <activity
                 android:name=".ui.auth.ForgotPasswordActivity"
                 android:exported="false" />
+
         <activity
-                android:name=".ui.auth.EmailVerificationActivity"
+                android:name=".ui.auth.EmailVerificationSentActivity"
                 android:exported="false"
-                android:screenOrientation="portrait" />
+                android:label="Email Verification"
+                android:theme="@style/Theme.NeighborhoodHelper" />
         <activity
                 android:name=".ui.auth.ResetPasswordActivity"
                 android:exported="false" />
