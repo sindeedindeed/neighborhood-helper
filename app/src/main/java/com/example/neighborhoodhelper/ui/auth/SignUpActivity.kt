@@ -14,12 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,10 +31,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
 import android.util.Log
-
-// Assume your main activity is called MainActivity.kt
-// You might not directly navigate here after signup, but after email verification and sign in.
-// import com.example.neighborhoodhelper.MainActivity
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 class SignUpActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
@@ -48,7 +41,6 @@ class SignUpActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize Firebase
         auth = FirebaseAuth.getInstance()
         firestore = FirebaseFirestore.getInstance()
 
@@ -56,6 +48,32 @@ class SignUpActivity : ComponentActivity() {
             SignUpScreen(auth, firestore)
         }
     }
+}
+
+// Helper function to generate username suggestions (MOVED TO TOP-LEVEL)
+private fun generateUsernameSuggestions(
+    firstName: String,
+    lastName: String,
+    currentUsername: String,
+    usernameSuggestionsState: MutableState<List<String>> // Accepts MutableState
+) {
+    val suggestions = mutableListOf<String>()
+    val base = if (firstName.isNotBlank() && lastName.isNotBlank()) {
+        "${firstName.lowercase()}.${lastName.lowercase()}"
+    } else {
+        currentUsername.lowercase() // Use the current username as base if names are blank
+    }
+
+    // Add suggestions with variations
+    suggestions.add("${base}${(100..999).random()}")
+    if (firstName.isNotBlank() && lastName.isNotBlank()) { // Only add if both names available
+        suggestions.add("${firstName.lowercase()}_${lastName.lowercase()}")
+        suggestions.add("${firstName.lowercase()}${lastName.lowercase()}${(10..99).random()}")
+    }
+    suggestions.add("${currentUsername.lowercase()}_${(1000..9999).random()}")
+
+
+    usernameSuggestionsState.value = suggestions.take(3) // Update the state
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +84,7 @@ fun SignUpScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
     // Form states
     var firstName by remember { mutableStateOf("") }
@@ -77,6 +96,13 @@ fun SignUpScreen(
     var phoneNumber by remember { mutableStateOf("") }
     var nid by remember { mutableStateOf("") }
     var countryCode by remember { mutableStateOf("+880") }
+    var termsAccepted by remember { mutableStateOf(false) }
+
+    // Username validation states
+    var isCheckingUsername by remember { mutableStateOf(false) }
+    var usernameAvailable by remember { mutableStateOf<Boolean?>(null) }
+    val usernameSuggestionsState = remember { mutableStateOf<List<String>>(emptyList()) } // Using the state object
+    var showSuggestions by remember { mutableStateOf(false) }
 
     // Password visibility states
     var passwordVisible by remember { mutableStateOf(false) }
@@ -90,10 +116,70 @@ fun SignUpScreen(
         return android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
     }
 
-    // Form validation - check if all fields are filled
+    // Username validation helper
+    fun isValidUsername(username: String): Boolean {
+        return username.length >= 3 &&
+                username.matches(Regex("^[a-zA-Z0-9._]+$"))
+    }
+
+    // Check username availability
+    fun checkUsernameAvailability(usernameToCheck: String) {
+        if (usernameToCheck.length < 3) {
+            usernameAvailable = null
+            showSuggestions = false
+            return
+        }
+
+        if (!isValidUsername(usernameToCheck)) {
+            usernameAvailable = false
+            showSuggestions = false
+            return
+        }
+
+        isCheckingUsername = true
+        coroutineScope.launch {
+            try {
+                val result = firestore.collection("usernames")
+                    .document(usernameToCheck.lowercase()) // Ensure consistent casing for lookup
+                    .get()
+                    .await()
+
+                usernameAvailable = !result.exists()
+
+                if (result.exists()) {
+                    // Generate suggestions if username is taken
+                    // CALL THE MOVED FUNCTION, PASSING THE STATE OBJECT
+                    generateUsernameSuggestions(firstName, lastName, usernameToCheck, usernameSuggestionsState)
+                    showSuggestions = true
+                } else {
+                    showSuggestions = false
+                }
+            } catch (e: Exception) {
+                Log.e("UsernameCheck", "Error checking username: ${e.message}")
+                usernameAvailable = null
+            } finally {
+                isCheckingUsername = false
+            }
+        }
+    }
+
+    // Check username when it changes (with debounce)
+    LaunchedEffect(username) {
+        kotlinx.coroutines.delay(500) // Debounce for 500ms
+        if (username.isNotBlank()) {
+            checkUsernameAvailability(username)
+        } else {
+            usernameAvailable = null
+            showSuggestions = false // Clear suggestions if username field is empty
+        }
+    }
+
+    // Form validation
     val isFormValid = firstName.isNotBlank() &&
             lastName.isNotBlank() &&
             username.isNotBlank() &&
+            isValidUsername(username) &&
+            usernameAvailable == true && // Ensure username is available
             email.isNotBlank() &&
             isValidEmail(email) &&
             password.isNotBlank() &&
@@ -101,30 +187,15 @@ fun SignUpScreen(
             phoneNumber.isNotBlank() &&
             nid.isNotBlank() &&
             password == confirmPassword &&
-            password.length >= 6
-
-    // Debug logging
-    LaunchedEffect(firstName, lastName, username, email, password, confirmPassword, phoneNumber, nid) {
-        Log.d("SignUpValidation", """
-            First Name: ${firstName.isNotBlank()}
-            Last Name: ${lastName.isNotBlank()}
-            Username: ${username.isNotBlank()}
-            Email: ${email.isNotBlank()} (Valid: ${isValidEmail(email)})
-            Password: ${password.isNotBlank()} (length: ${password.length})
-            Confirm Password: ${confirmPassword.isNotBlank()}
-            Passwords Match: ${password == confirmPassword}
-            Phone: ${phoneNumber.isNotBlank()}
-            NID: ${nid.isNotBlank()}
-            Form Valid: $isFormValid
-        """.trimIndent())
-    }
+            password.length >= 6 &&
+            termsAccepted
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // TOP BAR WITH BACK BUTTON AND TITLE (Fixed - Not scrollable)
+        // TOP BAR
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -154,7 +225,7 @@ fun SignUpScreen(
             )
         }
 
-        // MAIN CONTENT (Scrollable)
+        // MAIN CONTENT
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,7 +233,6 @@ fun SignUpScreen(
                 .padding(horizontal = 24.dp)
         ) {
 
-            // Title with emoji
             Text(
                 text = "Getting Started",
                 fontSize = 24.sp,
@@ -172,7 +242,6 @@ fun SignUpScreen(
                 modifier = Modifier.padding(bottom = 4.dp)
             )
 
-            // Subtitle
             Text(
                 text = "With Neighborhood Helper",
                 fontSize = 14.sp,
@@ -187,7 +256,6 @@ fun SignUpScreen(
                     .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // First Name
                 OutlinedTextField(
                     value = firstName,
                     onValueChange = { firstName = it },
@@ -198,13 +266,10 @@ fun SignUpScreen(
                     enabled = !isLoading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
-                        unfocusedBorderColor = Color(0xFFE5E5E5),
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
+                        unfocusedBorderColor = Color(0xFFE5E5E5)
                     )
                 )
 
-                // Last Name
                 OutlinedTextField(
                     value = lastName,
                     onValueChange = { lastName = it },
@@ -215,38 +280,139 @@ fun SignUpScreen(
                     enabled = !isLoading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
-                        unfocusedBorderColor = Color(0xFFE5E5E5),
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
+                        unfocusedBorderColor = Color(0xFFE5E5E5)
                     )
                 )
             }
 
-            // Username Field
+            // Username Field with Validation
             OutlinedTextField(
                 value = username,
-                onValueChange = { username = it },
+                onValueChange = {
+                    username = it.lowercase().replace(" ", "")
+                    // showSuggestions is now managed by LaunchedEffect and checkUsernameAvailability
+                },
                 label = { Text("Username") },
-                placeholder = { Text("Username") },
+                placeholder = { Text("Choose a unique username") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp),
+                    .padding(bottom = 4.dp),
                 trailingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Username",
-                        tint = Color.Gray
-                    )
+                    when {
+                        isCheckingUsername -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFF6C63FF)
+                            )
+                        }
+                        usernameAvailable == true && username.isNotBlank() -> {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Available",
+                                tint = Color(0xFF4CAF50)
+                            )
+                        }
+                        usernameAvailable == false && username.isNotBlank() -> {
+                            Icon(
+                                imageVector = Icons.Default.Cancel,
+                                contentDescription = "Not available",
+                                tint = Color.Red
+                            )
+                        }
+                        else -> {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Username",
+                                tint = Color.Gray
+                            )
+                        }
+                    }
                 },
                 shape = RoundedCornerShape(12.dp),
                 enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFF6C63FF),
-                    unfocusedBorderColor = Color(0xFFE5E5E5),
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
+                    focusedBorderColor = when {
+                        usernameAvailable == true -> Color(0xFF4CAF50)
+                        usernameAvailable == false -> Color.Red
+                        else -> Color(0xFF6C63FF)
+                    },
+                    unfocusedBorderColor = when {
+                        usernameAvailable == false -> Color.Red
+                        else -> Color(0xFFE5E5E5)
+                    }
+                ),
+                isError = usernameAvailable == false && username.isNotBlank()
             )
+
+            // Username validation message
+            if (username.isNotBlank()) {
+                when {
+                    !isValidUsername(username) -> {
+                        Text(
+                            text = "Username must be 3+ characters (letters, numbers, . and _ only)",
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    usernameAvailable == true -> {
+                        Text(
+                            text = "✓ Username is available",
+                            color = Color(0xFF4CAF50),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    usernameAvailable == false -> {
+                        Text(
+                            text = "✗ Username is already taken",
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            // Username suggestions
+            if (showSuggestions && usernameSuggestionsState.value.isNotEmpty()) { // Use .value to access list
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFF5F5F5)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Suggestions:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        usernameSuggestionsState.value.forEach { suggestion -> // Use .value to access list
+                            Text(
+                                text = suggestion,
+                                fontSize = 14.sp,
+                                color = Color(0xFF6C63FF),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        username = suggestion
+                                        showSuggestions = false
+                                    }
+                                    .padding(vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Email Field
             OutlinedTextField(
@@ -270,15 +436,12 @@ fun SignUpScreen(
                     focusedBorderColor = if (!isValidEmail(email) && email.isNotBlank())
                         Color.Red else Color(0xFF6C63FF),
                     unfocusedBorderColor = if (!isValidEmail(email) && email.isNotBlank())
-                        Color.Red else Color(0xFFE5E5E5),
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
+                        Color.Red else Color(0xFFE5E5E5)
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 isError = !isValidEmail(email) && email.isNotBlank()
             )
 
-            // Show email validation error
             if (!isValidEmail(email) && email.isNotBlank()) {
                 Text(
                     text = "Please enter a valid email address",
@@ -311,9 +474,7 @@ fun SignUpScreen(
                 enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF6C63FF),
-                    unfocusedBorderColor = Color(0xFFE5E5E5),
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
+                    unfocusedBorderColor = Color(0xFFE5E5E5)
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
@@ -343,15 +504,12 @@ fun SignUpScreen(
                     focusedBorderColor = if (password != confirmPassword && confirmPassword.isNotBlank())
                         Color.Red else Color(0xFF6C63FF),
                     unfocusedBorderColor = if (password != confirmPassword && confirmPassword.isNotBlank())
-                        Color.Red else Color(0xFFE5E5E5),
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
+                        Color.Red else Color(0xFFE5E5E5)
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 isError = password != confirmPassword && confirmPassword.isNotBlank()
             )
 
-            // Show password mismatch error
             if (password != confirmPassword && confirmPassword.isNotBlank()) {
                 Text(
                     text = "Passwords don't match",
@@ -361,18 +519,16 @@ fun SignUpScreen(
                 )
             }
 
-            // Phone Number Row (Country Code + Phone Number)
+            // Phone Number Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Country Code Selector
                 OutlinedTextField(
                     value = countryCode,
-                    onValueChange = { /* Currently read-only, no change implemented */ },
+                    onValueChange = { },
                     modifier = Modifier.width(100.dp),
                     readOnly = true,
                     enabled = !isLoading,
@@ -386,13 +542,10 @@ fun SignUpScreen(
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
-                        unfocusedBorderColor = Color(0xFFE5E5E5),
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
+                        unfocusedBorderColor = Color(0xFFE5E5E5)
                     )
                 )
 
-                // Phone Number
                 OutlinedTextField(
                     value = phoneNumber,
                     onValueChange = { phoneNumber = it },
@@ -410,9 +563,7 @@ fun SignUpScreen(
                     enabled = !isLoading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
-                        unfocusedBorderColor = Color(0xFFE5E5E5),
-                        focusedTextColor = Color.Black,
-                        unfocusedTextColor = Color.Black
+                        unfocusedBorderColor = Color(0xFFE5E5E5)
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                 )
@@ -426,86 +577,82 @@ fun SignUpScreen(
                 placeholder = { Text("National ID") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 24.dp),
+                    .padding(bottom = 16.dp),
                 shape = RoundedCornerShape(12.dp),
                 enabled = !isLoading,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF6C63FF),
-                    unfocusedBorderColor = Color(0xFFE5E5E5),
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
+                    unfocusedBorderColor = Color(0xFFE5E5E5)
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
 
-            // Continue Button with Firebase Integration
+            // Terms and Conditions Checkbox
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+                    .clickable(enabled = !isLoading) {
+                        termsAccepted = !termsAccepted
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = termsAccepted,
+                    onCheckedChange = { termsAccepted = it },
+                    enabled = !isLoading,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = Color(0xFF6C63FF),
+                        uncheckedColor = Color.Gray
+                    )
+                )
+                Text(
+                    text = "I agree to the ",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+                Text(
+                    text = "Terms and Conditions",
+                    fontSize = 14.sp,
+                    color = Color(0xFF6C63FF),
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.clickable(enabled = !isLoading) {
+                        // Open Terms and Conditions screen/dialog
+                        Toast.makeText(context, "Opening Terms & Conditions...", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+
+            // Continue Button
             Button(
                 onClick = {
                     if (isFormValid && !isLoading) {
-                        isLoading = true // Set loading state to true
-                        val startTime = System.currentTimeMillis()
-                        Log.d("SignUpTiming", "Start registration process. Time: ${startTime}ms")
+                        isLoading = true
 
-                        Log.d("SignUpFirebase", "Starting Firebase registration...")
-                        Log.d("SignUpFirebase", "Creating user with email: $email")
-
-                        // 1. Create user with Firebase Authentication
                         auth.createUserWithEmailAndPassword(email, password)
                             .addOnCompleteListener { authTask ->
-                                val authCompleteTime = System.currentTimeMillis()
-                                Log.d("SignUpTiming", "Auth createUserWithEmailAndPassword completed. Time: ${authCompleteTime}ms. Duration: ${authCompleteTime - startTime}ms")
-
                                 if (authTask.isSuccessful) {
                                     val firebaseUser = auth.currentUser
                                     val userId = firebaseUser?.uid ?: ""
 
-                                    Log.d("SignUpFirebase", "User created successfully with ID: $userId")
-
-                                    // 2. Send Email Verification (This runs in parallel and doesn't block Firestore save)
-                                    // The Toast messages related to email sending are handled by the EmailVerificationSentActivity now.
                                     firebaseUser?.sendEmailVerification()
-                                        ?.addOnCompleteListener { emailVerificationTask ->
-                                            val emailSentTime = System.currentTimeMillis()
-                                            Log.d("SignUpTiming", "Email verification send attempt completed. Time: ${emailSentTime}ms. Duration from Auth complete: ${emailSentTime - authCompleteTime}ms")
 
-                                            if (emailVerificationTask.isSuccessful) {
-                                                Log.d("SignUpFirebase", "Verification email sent.")
-                                            } else {
-                                                Log.e("SignUpFirebase", "Failed to send verification email: ${emailVerificationTask.exception?.message}")
-                                            }
-                                        }
-
-                                    // 3. Save User Data to Firestore (Always attempt this if Auth was successful)
                                     saveUserDataToFirestore(
                                         firestore,
                                         userId,
                                         firstName, lastName, username, email,
                                         countryCode, phoneNumber, nid,
                                         onSuccess = {
-                                            val firestoreCompleteTime = System.currentTimeMillis()
-                                            Log.d("SignUpTiming", "Firestore data save completed. Time: ${firestoreCompleteTime}ms. Duration from Auth complete: ${firestoreCompleteTime - authCompleteTime}ms")
-                                            isLoading = false // Reset loading state on success
-                                            Log.d("SignUpTiming", "Registration process finished. Total Duration: ${firestoreCompleteTime - startTime}ms")
-                                            Log.d("SignUpFirebase", "User data saved successfully! Navigating to EmailVerificationSentActivity.")
-
-                                            // <--- MODIFIED NAVIGATION STARTS HERE --->
-                                            // Navigate to the EmailVerificationSentActivity
+                                            isLoading = false
                                             val intent = Intent(context, EmailVerificationSentActivity::class.java)
-                                            // Clear the back stack so user can't go back to SignUpActivity with back button
                                             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                                             context.startActivity(intent)
-                                            // Finish the current SignUpActivity
                                             if (context is ComponentActivity) {
                                                 context.finish()
                                             }
-                                            // <--- MODIFIED NAVIGATION ENDS HERE --->
                                         },
                                         onFailure = { e ->
-                                            val firestoreFailTime = System.currentTimeMillis()
-                                            Log.e("SignUpTiming", "Firestore data save FAILED. Time: ${firestoreFailTime}ms. Duration from Auth complete: ${firestoreFailTime - authCompleteTime}ms")
-                                            isLoading = false // Reset loading state on Firestore failure
-                                            Log.d("SignUpTiming", "Registration process finished with Firestore error. Total Duration: ${firestoreFailTime - startTime}ms")
-                                            Log.e("SignUpFirebase", "Error saving user data: ${e.message}")
+                                            isLoading = false
                                             Toast.makeText(
                                                 context,
                                                 "Error saving user data: ${e.message}",
@@ -513,11 +660,8 @@ fun SignUpScreen(
                                             ).show()
                                         }
                                     )
-
                                 } else {
-                                    isLoading = false // Reset loading state on Auth failure
-                                    Log.d("SignUpTiming", "Auth createUserWithEmailAndPassword FAILED. Total Duration: ${authCompleteTime - startTime}ms")
-                                    Log.e("SignUpFirebase", "Registration failed: ${authTask.exception?.message}")
+                                    isLoading = false
                                     Toast.makeText(
                                         context,
                                         "Registration failed: ${authTask.exception?.message}",
@@ -525,18 +669,12 @@ fun SignUpScreen(
                                     ).show()
                                 }
                             }
-                    } else {
-                        Log.d("SignUpFirebase", "Form is not valid or already loading")
-                        // Provide more immediate feedback if form is invalid
-                        if (!isFormValid) {
-                            Toast.makeText(context, "Please fill all fields correctly.", Toast.LENGTH_SHORT).show()
-                        }
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = isFormValid && !isLoading, // Button enabled only if form is valid and not loading
+                enabled = isFormValid && !isLoading,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isFormValid) Color(0xFF6C63FF) else Color.Gray,
                     disabledContainerColor = Color.Gray
@@ -578,7 +716,7 @@ fun SignUpScreen(
                     color = Color(0xFF6C63FF),
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clickable {
-                        if (!isLoading) { // Prevent navigation while loading
+                        if (!isLoading) {
                             val intent = Intent(context, SignInActivity::class.java)
                             context.startActivity(intent)
                             if (context is ComponentActivity) {
@@ -592,8 +730,6 @@ fun SignUpScreen(
     }
 }
 
-// Helper function to save user data to Firestore
-// Add this function outside of SignUpScreen, for example, just below it or at the end of the file.
 private fun saveUserDataToFirestore(
     firestore: FirebaseFirestore,
     userId: String,
@@ -607,21 +743,34 @@ private fun saveUserDataToFirestore(
     onSuccess: () -> Unit,
     onFailure: (Exception) -> Unit
 ) {
-    val userData = hashMapOf(
-        "firstName" to firstName,
-        "lastName" to lastName,
-        "username" to username,
-        "email" to email,
-        "phoneNumber" to "$countryCode$phoneNumber",
-        "countryCode" to countryCode,
-        "nid" to nid,
-        "createdAt" to Timestamp.now(),
-        "emailVerified" to false // New field to track if email is verified
-    )
+    // First, save the username to the usernames collection (for uniqueness)
+    val usernameDoc = firestore.collection("usernames")
+        .document(username.lowercase())
 
-    firestore.collection("users")
-        .document(userId)
-        .set(userData)
-        .addOnSuccessListener { onSuccess() }
+    usernameDoc.set(hashMapOf("userId" to userId))
+        .addOnSuccessListener {
+            // Then save the user data
+            val userData = hashMapOf(
+                "firstName" to firstName,
+                "lastName" to lastName,
+                "username" to username,
+                "email" to email,
+                "phoneNumber" to "$countryCode$phoneNumber",
+                "countryCode" to countryCode,
+                "nid" to nid,
+                "createdAt" to Timestamp.now(),
+                "emailVerified" to false
+            )
+
+            firestore.collection("users")
+                .document(userId)
+                .set(userData)
+                .addOnSuccessListener { onSuccess() }
+                .addOnFailureListener { e ->
+                    // If user data save fails, remove the username entry
+                    usernameDoc.delete()
+                    onFailure(e)
+                }
+        }
         .addOnFailureListener { e -> onFailure(e) }
 }
