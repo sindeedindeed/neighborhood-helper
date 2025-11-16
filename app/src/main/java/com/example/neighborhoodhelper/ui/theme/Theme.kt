@@ -11,17 +11,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = DeepPrimary,
+    primary = PrimaryPurple,
     secondary = WarmSecondary,
     tertiary = Pink80,
-    background = BackgroundLight, // keep light background for consistency in previews
+    background = BackgroundLight,
     surface = BackgroundLight,
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = OnSurfaceVariantDark
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = DeepPrimary,
+    primary = PrimaryPurple,
     secondary = WarmSecondary,
     tertiary = Pink40,
     background = BackgroundLight,
@@ -42,7 +42,6 @@ fun NeighborhoodHelperTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }

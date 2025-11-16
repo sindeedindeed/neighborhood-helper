@@ -1,6 +1,5 @@
 package com.example.neighborhoodhelper.model
 
-/** Simple Comment model for posts */
 data class Comment(
     val id: String,
     val postId: String,
@@ -9,4 +8,3 @@ data class Comment(
     val text: String,
     val timestamp: String
 )
-
