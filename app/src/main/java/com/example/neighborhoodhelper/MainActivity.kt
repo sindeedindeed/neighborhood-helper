@@ -4,10 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -29,29 +27,35 @@ class MainActivity : ComponentActivity() {
                 var screen by remember { mutableStateOf<Screen>(Screen.Create) }
                 var lastPostData by remember { mutableStateOf<PostData?>(null) }
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    when (val s = screen) {
-                        is Screen.Create -> {
-                            val vm = remember { PostViewModel() }
-                            CreatePostScreen(viewModel = vm, onPostSubmitted = { postData ->
-                                lastPostData = postData
-                                screen = Screen.Loading
-                            })
-                        }
+                Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
+                    // consume contentPadding by applying it to a container
+                    Box(modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding)) {
 
-                        is Screen.Loading -> {
-                            val urgent = lastPostData?.isUrgent ?: false
-                            LoadingScreen(isUrgent = urgent)
-
-                            // Simulate searching and then go to success screen
-                            LaunchedEffect(lastPostData) {
-                                delay(2000)
-                                screen = Screen.Success
+                        when (val s = screen) {
+                            is Screen.Create -> {
+                                val vm = remember { PostViewModel() }
+                                CreatePostScreen(viewModel = vm, onPostSubmitted = { postData ->
+                                    lastPostData = postData
+                                    screen = Screen.Loading
+                                })
                             }
-                        }
 
-                        is Screen.Success -> {
-                            SuccessPostScreen()
+                            is Screen.Loading -> {
+                                val urgent = lastPostData?.isUrgent ?: false
+                                LoadingScreen(isUrgent = urgent)
+
+                                // Simulate searching and then go to success screen
+                                LaunchedEffect(lastPostData) {
+                                    delay(2000)
+                                    screen = Screen.Success
+                                }
+                            }
+
+                            is Screen.Success -> {
+                                SuccessPostScreen()
+                            }
                         }
                     }
                 }

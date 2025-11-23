@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -25,6 +26,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+// User-specified neutral color
+private val NeutralBackground = Color(0xFFE0E0E0)
 
 @Composable
 fun CreatePostScreen(
@@ -74,7 +78,13 @@ fun CreatePostScreen(
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
+            // Use the provided neutral color as the card background; when urgent, show a red border
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                border = if (isUrgent) BorderStroke(2.dp, Color.Red) else BorderStroke(1.dp, NeutralBackground),
+                colors = CardDefaults.cardColors(containerColor = NeutralBackground)
+            ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // Profile picture placeholder

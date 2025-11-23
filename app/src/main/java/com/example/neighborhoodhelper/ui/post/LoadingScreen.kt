@@ -1,3 +1,4 @@
+@file:Suppress("unused")
 // LoadingScreen.kt
 // Compose screen shown after submitting a post while searching for nearby helpers. Shows a progress indicator
 // and applies a red blinking background when the request is marked as urgent.
