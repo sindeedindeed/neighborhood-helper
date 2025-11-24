@@ -9,6 +9,9 @@ import com.example.neighborhoodhelper.model.Comment
 import com.example.neighborhoodhelper.model.Notification
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import android.content.Context
+import android.net.Uri
+import com.example.neighborhoodhelper.utils.ImageUploadManager
 
 class FeedViewModel : ViewModel() {
     private val repository = FirebaseRepository()
@@ -77,6 +80,38 @@ class FeedViewModel : ViewModel() {
             }
         }
     }
+    private val imageUploadManager = ImageUploadManager()
+
+    fun createPostWithImage(content: String, imageUri: Uri?, location: String?, context: Context) {
+        if (content.isBlank()) {
+            _uiState.value = UiState.Error("Post content cannot be empty")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+
+            // Upload image if selected
+            val imageUrl = if (imageUri != null) {
+                val uploadResult = imageUploadManager.uploadPostImage(imageUri, context)
+                if (uploadResult.isFailure) {
+                    _uiState.value = UiState.Error("Failed to upload image")
+                    return@launch
+                }
+                uploadResult.getOrNull()
+            } else {
+                null
+            }
+
+            // Create post with image URL
+            val result = repository.createPost(content, imageUrl, location)
+            _uiState.value = if (result.isSuccess) {
+                UiState.Success("Post created successfully")
+            } else {
+                UiState.Error(result.exceptionOrNull()?.message ?: "Failed to create post")
+            }
+        }
+    }
 
     // Toggle like on a post
     fun toggleLike(postId: String) {
@@ -97,6 +132,13 @@ class FeedViewModel : ViewModel() {
             if (result.isFailure) {
                 _uiState.value = UiState.Error("Failed to add comment")
             }
+        }
+    }
+    fun refreshFeed() {
+        viewModelScope.launch {
+            // The StateFlow will automatically refresh since it's observing Firestore
+            // But we can force a state update if needed
+            Log.d("FeedViewModel", "Feed refreshed")
         }
     }
 

@@ -260,21 +260,43 @@ class FirebaseRepository {
     // ============ USER OPERATIONS ============
 
     // Create or update user profile
-    suspend fun createOrUpdateUser(username: String, email: String): Result<Unit> {
+    // Update the existing createOrUpdateUser function
+    suspend fun createOrUpdateUserProfile(
+        username: String,
+        email: String,
+        phoneNumber: String = "",
+        bio: String = "",
+        avatarUrl: String = ""
+    ): Result<Unit> {
         return try {
             val userId = getCurrentUserId() ?: return Result.failure(Exception("User not authenticated"))
 
             val user = hashMapOf(
                 "username" to username,
                 "email" to email,
-                "avatarUrl" to ""
+                "phoneNumber" to phoneNumber,
+                "bio" to bio,
+                "avatarUrl" to avatarUrl,
+                "friends" to emptyList<String>(),
+                "friendRequests" to emptyList<String>()
             )
 
             usersCollection.document(userId).set(user).await()
+            Log.d("FirebaseRepo", "User profile created/updated: $username")
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("FirebaseRepo", "Error creating/updating user", e)
             Result.failure(e)
+        }
+    }
+
+    // Check if user has completed profile
+    suspend fun hasCompletedProfile(): Boolean {
+        return try {
+            val user = getCurrentUser()
+            user != null && user.username.isNotBlank()
+        } catch (e: Exception) {
+            false
         }
     }
 

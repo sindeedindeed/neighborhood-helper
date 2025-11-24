@@ -73,6 +73,15 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
+    // Firebase Storage (already added with BoM)
+    implementation("com.google.firebase:firebase-storage-ktx")
+
+    // Image Picker
+    implementation("androidx.activity:activity-compose:1.8.2")
+
+    // Image Compression
+    implementation("id.zelory:compressor:3.0.1")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

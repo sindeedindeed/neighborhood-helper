@@ -1,7 +1,17 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.neighborhoodhelper.ui.feed
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.LocalContext
+import com.example.neighborhoodhelper.ui.profile.ProfileViewModel
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
+
+import com.example.neighborhoodhelper.utils.ImageUploadManager
 import com.example.neighborhoodhelper.model.Notification
 import com.example.neighborhoodhelper.model.NotificationType
 import androidx.compose.foundation.lazy.items
@@ -11,14 +21,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -27,7 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+
 import androidx.compose.ui.layout.ContentScale
+
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,7 +47,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.neighborhoodhelper.model.Post
-import com.example.neighborhoodhelper.model.Comment
 
 // Color Palette
 val PrimaryPurple = Color(0xFF6B3FA0)
@@ -419,6 +428,7 @@ fun CustomBottomBar(
 ) {
     val viewModel: FeedViewModel = viewModel()
     val unreadCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     NavigationBar(
         containerColor = Color.White,
@@ -427,7 +437,14 @@ fun CustomBottomBar(
         NavigationBarItem(
             icon = { Icon(Icons.Outlined.Home, "Home", Modifier.size(26.dp)) },
             selected = true,
-            onClick = onHomeClick,
+            onClick = {
+                onHomeClick()
+                android.widget.Toast.makeText(
+                    context,
+                    "Refreshing feed...",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = PrimaryPurple,
                 unselectedIconColor = Color.Gray,
@@ -487,20 +504,35 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var postText by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var isPosting by remember { mutableStateOf(false) }
+    var isUploadingImage by remember { mutableStateOf(false) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val imageUploadManager = remember { ImageUploadManager() }
+
+    // Image picker launcher
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        selectedImageUri = uri
+    }
 
     // Handle UI state
     LaunchedEffect(uiState) {
         when (uiState) {
             is FeedViewModel.UiState.Success -> {
                 isPosting = false
+                isUploadingImage = false
                 postText = ""
                 location = ""
+                selectedImageUri = null
                 onDismiss()
                 viewModel.resetUiState()
             }
             is FeedViewModel.UiState.Error -> {
                 isPosting = false
+                isUploadingImage = false
             }
             is FeedViewModel.UiState.Loading -> {
                 isPosting = true
@@ -515,7 +547,9 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
@@ -538,6 +572,62 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                     )
                 )
 
+                // Image Preview
+                selectedImageUri?.let { uri ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFE0E0E0))
+                    ) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Selected image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Remove button
+                        IconButton(
+                            onClick = { selectedImageUri = null },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove image",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Add Image Button
+                if (selectedImageUri == null) {
+                    OutlinedButton(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isPosting,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PrimaryPurple
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = "Add image",
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add Photo")
+                    }
+                }
+
                 OutlinedTextField(
                     value = location,
                     onValueChange = { location = it },
@@ -545,6 +635,12 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !isPosting,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "Location"
+                        )
+                    },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = PrimaryPurple
                     )
@@ -571,16 +667,17 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                     }
                     Button(
                         onClick = {
-                            viewModel.createPost(
+                            viewModel.createPostWithImage(
                                 content = postText,
-                                imageUrl = null,
-                                location = location.ifBlank { null }
+                                imageUri = selectedImageUri,
+                                location = location.ifBlank { null },
+                                context = context
                             )
                         },
                         enabled = !isPosting && postText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
                     ) {
-                        if (isPosting) {
+                        if (isPosting || isUploadingImage) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 color = Color.White,
@@ -588,7 +685,11 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                             )
                             Spacer(Modifier.width(8.dp))
                         }
-                        Text(if (isPosting) "Posting..." else "Post")
+                        Text(
+                            if (isUploadingImage) "Uploading..."
+                            else if (isPosting) "Posting..."
+                            else "Post"
+                        )
                     }
                 }
             }
@@ -598,6 +699,8 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
 
 @Composable
 fun MenuDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -633,10 +736,56 @@ fun MenuDialog(onDismiss: () -> Unit) {
                 }
 
                 Column(modifier = Modifier.padding(16.dp)) {
-                    MenuItemCard(Icons.Default.Info, "About")
-                    MenuItemCard(Icons.Default.Help, "Help & Support")
-                    MenuItemCard(Icons.Default.Share, "Share App")
-                    MenuItemCard(Icons.Default.Star, "Rate Us")
+                    MenuItemCard(
+                        icon = Icons.Default.Info,
+                        text = "About",
+                        onClick = {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Neighborhood Helper v1.0\nHelping neighbors connect and support each other",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                    MenuItemCard(
+                        icon = Icons.Default.Help,
+                        text = "Help & Support",
+                        onClick = {
+                            android.widget.Toast.makeText(
+                                context,
+                                "For support, email: support@neighborhoodhelper.com",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                    MenuItemCard(
+                        icon = Icons.Default.Share,
+                        text = "Share App",
+                        onClick = {
+                            val shareIntent = android.content.Intent().apply {
+                                action = android.content.Intent.ACTION_SEND
+                                putExtra(
+                                    android.content.Intent.EXTRA_TEXT,
+                                    "Check out Neighborhood Helper app! Connect with your neighbors and build a stronger community."
+                                )
+                                type = "text/plain"
+                            }
+                            context.startActivity(
+                                android.content.Intent.createChooser(shareIntent, "Share via")
+                            )
+                        }
+                    )
+                    MenuItemCard(
+                        icon = Icons.Default.Star,
+                        text = "Rate Us",
+                        onClick = {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Thank you for your support! ⭐",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
                 }
             }
         }
@@ -644,7 +793,7 @@ fun MenuDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun MenuItemCard(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+fun MenuItemCard(icon: ImageVector, text: String, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -668,6 +817,7 @@ fun MenuItemCard(icon: androidx.compose.ui.graphics.vector.ImageVector, text: St
 
 @Composable
 fun FriendsDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val friends = remember {
         listOf(
             "Maishan Nadis", "Safwat Bushra", "Faiza Tashmeah",
@@ -718,7 +868,16 @@ fun FriendsDialog(onDismiss: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(friends) { friend ->
-                        FriendItem(name = friend)
+                        FriendItem(
+                            name = friend,
+                            onMessageClick = {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Opening chat with $friend...",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        )
                     }
                 }
             }
@@ -727,7 +886,7 @@ fun FriendsDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun FriendItem(name: String) {
+fun FriendItem(name: String, onMessageClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -759,7 +918,7 @@ fun FriendItem(name: String) {
                 modifier = Modifier.weight(1f)
             )
             Button(
-                onClick = { },
+                onClick = onMessageClick,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
@@ -917,9 +1076,25 @@ fun NotificationItemCard(
 
 @Composable
 fun ProfileDialog(onDismiss: () -> Unit) {
+    val viewModel: FeedViewModel = viewModel()
+    val profileViewModel: ProfileViewModel = viewModel()
+    val currentUser by profileViewModel.currentUser.collectAsStateWithLifecycle()
+
     var isEditing by remember { mutableStateOf(false) }
-    var userName by remember { mutableStateOf("Mahdi Hasan") }
-    var userEmail by remember { mutableStateOf("mahdi@email.com") }
+    var userName by remember { mutableStateOf("") }
+    var userEmail by remember { mutableStateOf("") }
+    var userPhone by remember { mutableStateOf("") }
+    var userBio by remember { mutableStateOf("") }
+
+    // Load current user data
+    LaunchedEffect(currentUser) {
+        currentUser?.let { user ->
+            userName = user.username
+            userEmail = user.email
+            userPhone = user.phoneNumber
+            userBio = user.bio
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -966,6 +1141,8 @@ fun ProfileDialog(onDismiss: () -> Unit) {
                 ) {
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
+
+                        // Profile Picture
                         Box(
                             modifier = Modifier
                                 .size(100.dp)
@@ -973,12 +1150,21 @@ fun ProfileDialog(onDismiss: () -> Unit) {
                                 .background(PrimaryPurple),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = userName.firstOrNull()?.toString() ?: "M",
-                                fontSize = 40.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            if (currentUser?.avatarUrl?.isNotBlank() == true) {
+                                AsyncImage(
+                                    model = currentUser?.avatarUrl,
+                                    contentDescription = "Profile picture",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text(
+                                    text = userName.firstOrNull()?.toString()?.uppercase() ?: "U",
+                                    fontSize = 40.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
 
@@ -1015,9 +1201,53 @@ fun ProfileDialog(onDismiss: () -> Unit) {
                             )
                         } else {
                             Text(
-                                text = userEmail,
+                                text = userEmail.ifBlank { "No email set" },
                                 fontSize = 14.sp,
                                 color = MediumGray
+                            )
+                        }
+                    }
+
+                    item {
+                        if (isEditing) {
+                            OutlinedTextField(
+                                value = userPhone,
+                                onValueChange = { userPhone = it },
+                                label = { Text("Phone") },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = PrimaryPurple
+                                )
+                            )
+                        } else if (userPhone.isNotBlank()) {
+                            Text(
+                                text = userPhone,
+                                fontSize = 14.sp,
+                                color = MediumGray
+                            )
+                        }
+                    }
+
+                    item {
+                        if (isEditing) {
+                            OutlinedTextField(
+                                value = userBio,
+                                onValueChange = { userBio = it },
+                                label = { Text("Bio") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(100.dp),
+                                maxLines = 4,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = PrimaryPurple
+                                )
+                            )
+                        } else if (userBio.isNotBlank()) {
+                            Text(
+                                text = userBio,
+                                fontSize = 14.sp,
+                                color = DarkGray,
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }
@@ -1029,13 +1259,30 @@ fun ProfileDialog(onDismiss: () -> Unit) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 OutlinedButton(
-                                    onClick = { isEditing = false },
+                                    onClick = {
+                                        isEditing = false
+                                        // Reset values
+                                        currentUser?.let { user ->
+                                            userName = user.username
+                                            userEmail = user.email
+                                            userPhone = user.phoneNumber
+                                            userBio = user.bio
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("Cancel")
                                 }
                                 Button(
-                                    onClick = { isEditing = false },
+                                    onClick = {
+                                        profileViewModel.updateProfile(
+                                            username = userName,
+                                            email = userEmail,
+                                            phoneNumber = userPhone,
+                                            bio = userBio
+                                        )
+                                        isEditing = false
+                                    },
                                     modifier = Modifier.weight(1f),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = PrimaryPurple
@@ -1059,15 +1306,29 @@ fun ProfileDialog(onDismiss: () -> Unit) {
                                     onClick = { isEditing = true }
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                ProfileMenuItem(Icons.Default.Settings, "Settings", onClick = {})
+                                ProfileMenuItem(
+                                    icon = Icons.Default.Settings,
+                                    text = "Settings",
+                                    onClick = { /* TODO: Navigate to settings */ }
+                                )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                ProfileMenuItem(Icons.Default.Notifications, "Notification Settings", onClick = {})
+                                ProfileMenuItem(
+                                    icon = Icons.Default.Notifications,
+                                    text = "Notification Settings",
+                                    onClick = { /* TODO: Navigate to notification settings */ }
+                                )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                ProfileMenuItem(Icons.Default.Lock, "Privacy", onClick = {})
+                                ProfileMenuItem(
+                                    icon = Icons.Default.Lock,
+                                    text = "Privacy",
+                                    onClick = { /* TODO: Navigate to privacy */ }
+                                )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                ProfileMenuItem(Icons.Default.Info, "About", onClick = {})
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                ProfileMenuItem(Icons.AutoMirrored.Filled.ExitToApp, "Logout", onClick = {})
+                                ProfileMenuItem(
+                                    icon = Icons.Default.Info,
+                                    text = "About",
+                                    onClick = { /* TODO: Show about dialog */ }
+                                )
                             }
                         }
                     }

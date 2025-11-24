@@ -17,13 +17,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.neighborhoodhelper.auth.AuthManager
+import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.ui.feed.FeedScreen
 import com.example.neighborhoodhelper.ui.details.PostDetailScreen
+import com.example.neighborhoodhelper.ui.profile.ProfileSetupScreen
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val authManager = AuthManager()
+    private val repository = FirebaseRepository()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +40,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     var isAuthenticating by remember { mutableStateOf(true) }
                     var authError by remember { mutableStateOf<String?>(null) }
+                    var startDestination by remember { mutableStateOf("feed") }
 
                     // Authenticate on app start
                     LaunchedEffect(Unit) {
@@ -44,6 +48,10 @@ class MainActivity : ComponentActivity() {
                             val result = authManager.signInAnonymouslyIfNeeded()
                             if (result.isFailure) {
                                 authError = result.exceptionOrNull()?.message
+                            } else {
+                                // Check if user has completed profile
+                                val hasProfile = repository.hasCompletedProfile()
+                                startDestination = if (hasProfile) "feed" else "profile_setup"
                             }
                             isAuthenticating = false
                         }
@@ -74,8 +82,11 @@ class MainActivity : ComponentActivity() {
 
                             NavHost(
                                 navController = navController,
-                                startDestination = "feed"
+                                startDestination = startDestination
                             ) {
+                                composable("profile_setup") {
+                                    ProfileSetupScreen(navController = navController)
+                                }
                                 composable("feed") {
                                     FeedScreen(navController = navController)
                                 }

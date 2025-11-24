@@ -23,7 +23,13 @@ class AuthManager {
 
             // Create user profile with a default username
             val username = "User${userId.take(6)}"
-            repository.createOrUpdateUser(username, "")
+            // CHANGED: Use the new function name
+            repository.createOrUpdateUserProfile(
+                username = username,
+                email = "",
+                phoneNumber = "",
+                bio = ""
+            )
 
             Log.d("AuthManager", "Signed in anonymously: $userId")
             Result.success(userId)
