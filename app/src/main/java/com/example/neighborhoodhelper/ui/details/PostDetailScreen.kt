@@ -1,6 +1,8 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.neighborhoodhelper.ui.details
 
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -41,8 +43,10 @@ fun PostDetailScreen(navController: NavController, postId: String) {
     val viewModel: FeedViewModel = viewModel()
     val postsState = viewModel.posts.collectAsStateWithLifecycle()
     val post = postsState.value.firstOrNull { it.id == postId }
-    val commentsState = viewModel.comments.collectAsStateWithLifecycle()
-    val comments = commentsState.value.filter { it.postId == postId }
+
+    // Observe comments for this specific post
+    val commentsFlow = remember(postId) { viewModel.getCommentsForPost(postId) }
+    val comments by commentsFlow.collectAsStateWithLifecycle()
 
     var showCommentInput by remember { mutableStateOf(false) }
     var commentText by remember { mutableStateOf("") }
@@ -77,7 +81,13 @@ fun PostDetailScreen(navController: NavController, postId: String) {
 
             if (post == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Post not found", color = DarkGray)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(color = PrimaryPurple)
+                        Text("Loading post...", color = DarkGray)
+                    }
                 }
             } else {
                 LazyColumn(
@@ -157,18 +167,41 @@ fun PostDetailScreen(navController: NavController, postId: String) {
                                 Spacer(Modifier.height(12.dp))
 
                                 // Location
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Filled.LocationOn,
-                                        contentDescription = "Location",
-                                        tint = PrimaryPurple,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(Modifier.width(8.dp))
+                                if (!post.location.isNullOrBlank()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Filled.LocationOn,
+                                            contentDescription = "Location",
+                                            tint = PrimaryPurple,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            post.location,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MediumGray
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+
+                                // Stats
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
                                     Text(
-                                        post.location ?: "Kolabagan, Dhaka",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MediumGray
+                                        text = "${post.likes} Willing",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MediumGray,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = "${comments.size} Comments",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MediumGray,
+                                        fontSize = 12.sp
                                     )
                                 }
                             }
@@ -209,7 +242,7 @@ fun PostDetailScreen(navController: NavController, postId: String) {
                             }
                         }
                     } else {
-                        items(comments) { comment ->
+                        items(comments, key = { it.id }) { comment ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
@@ -229,81 +262,83 @@ fun PostDetailScreen(navController: NavController, postId: String) {
         }
 
         // Bottom Action Bar
-        Surface(
-            tonalElevation = 8.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter),
-            color = Color.White
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { /* Willing action */ },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = PrimaryPurple
-                        )
-                    ) {
-                        Text("Willing")
-                    }
-
-                    Button(
-                        onClick = { showCommentInput = !showCommentInput },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryPurple,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            Icons.Outlined.ChatBubbleOutline,
-                            contentDescription = "Comments",
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Comment")
-                    }
-                }
-
-                AnimatedVisibility(visible = showCommentInput) {
+        if (post != null) {
+            Surface(
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter),
+                color = Color.White
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedTextField(
-                            value = commentText,
-                            onValueChange = { commentText = it },
-                            placeholder = { Text("Write a comment...") },
+                        OutlinedButton(
+                            onClick = { viewModel.toggleLike(postId) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = false,
-                            maxLines = 4,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = PrimaryPurple
+                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = PrimaryPurple
                             )
-                        )
+                        ) {
+                            Text("Willing")
+                        }
 
-                        IconButton(onClick = {
-                            val toSend = commentText.trim()
-                            if (toSend.isNotBlank()) {
-                                viewModel.addComment(postId = postId, author = "You", text = toSend)
-                                commentText = ""
-                                showCommentInput = false
-                            }
-                        }) {
-                            Icon(
-                                Icons.Filled.Send,
-                                contentDescription = "Send",
-                                tint = PrimaryPurple
+                        Button(
+                            onClick = { showCommentInput = !showCommentInput },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryPurple,
+                                contentColor = Color.White
                             )
+                        ) {
+                            Icon(
+                                Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = "Comments",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Comment")
+                        }
+                    }
+
+                    AnimatedVisibility(visible = showCommentInput) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = commentText,
+                                onValueChange = { commentText = it },
+                                placeholder = { Text("Write a comment...") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = false,
+                                maxLines = 4,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = PrimaryPurple
+                                )
+                            )
+
+                            IconButton(onClick = {
+                                val toSend = commentText.trim()
+                                if (toSend.isNotBlank()) {
+                                    viewModel.addComment(postId = postId, author = "You", text = toSend)
+                                    commentText = ""
+                                    showCommentInput = false
+                                }
+                            }) {
+                                Icon(
+                                    Icons.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = PrimaryPurple
+                                )
+                            }
                         }
                     }
                 }

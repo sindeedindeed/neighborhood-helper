@@ -2,6 +2,9 @@
 package com.example.neighborhoodhelper.ui.feed
 
 import androidx.compose.animation.AnimatedVisibility
+import com.example.neighborhoodhelper.model.Notification
+import com.example.neighborhoodhelper.model.NotificationType
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -333,6 +336,46 @@ fun PostCard(
                 )
             }
 
+            // Location if available
+            if (!post.location.isNullOrBlank()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Location",
+                        tint = MediumGray,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = post.location,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MediumGray,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            // Stats row (likes, comments)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "${post.likes} Willing",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MediumGray,
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = "${post.comments} Comments",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MediumGray,
+                    fontSize = 12.sp
+                )
+            }
+
             // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -374,6 +417,9 @@ fun CustomBottomBar(
     onNotificationsClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
+    val viewModel: FeedViewModel = viewModel()
+    val unreadCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
+
     NavigationBar(
         containerColor = Color.White,
         tonalElevation = 8.dp
@@ -399,7 +445,21 @@ fun CustomBottomBar(
             )
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Notifications, "Notifications", Modifier.size(26.dp)) },
+            icon = {
+                Box {
+                    Icon(Icons.Outlined.Notifications, "Notifications", Modifier.size(26.dp))
+                    if (unreadCount > 0) {
+                        Badge(
+                            modifier = Modifier.align(Alignment.TopEnd)
+                        ) {
+                            Text(
+                                text = if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            },
             selected = false,
             onClick = onNotificationsClick,
             colors = NavigationBarItemDefaults.colors(
@@ -423,9 +483,33 @@ fun CustomBottomBar(
 
 @Composable
 fun CreatePostDialog(onDismiss: () -> Unit) {
+    val viewModel: FeedViewModel = viewModel()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var postText by remember { mutableStateOf("") }
+    var location by remember { mutableStateOf("") }
+    var isPosting by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    // Handle UI state
+    LaunchedEffect(uiState) {
+        when (uiState) {
+            is FeedViewModel.UiState.Success -> {
+                isPosting = false
+                postText = ""
+                location = ""
+                onDismiss()
+                viewModel.resetUiState()
+            }
+            is FeedViewModel.UiState.Error -> {
+                isPosting = false
+            }
+            is FeedViewModel.UiState.Loading -> {
+                isPosting = true
+            }
+            else -> Unit
+        }
+    }
+
+    Dialog(onDismissRequest = { if (!isPosting) onDismiss() }) {
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -439,6 +523,7 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
                 )
+
                 OutlinedTextField(
                     value = postText,
                     onValueChange = { postText = it },
@@ -447,22 +532,63 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                         .fillMaxWidth()
                         .height(150.dp),
                     maxLines = 6,
+                    enabled = !isPosting,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = PrimaryPurple
                     )
                 )
+
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    placeholder = { Text("Location (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isPosting,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryPurple
+                    )
+                )
+
+                // Show error if any
+                if (uiState is FeedViewModel.UiState.Error) {
+                    Text(
+                        text = (uiState as FeedViewModel.UiState.Error).message,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp
+                    )
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isPosting
+                    ) {
                         Text("Cancel")
                     }
                     Button(
-                        onClick = onDismiss,
+                        onClick = {
+                            viewModel.createPost(
+                                content = postText,
+                                imageUrl = null,
+                                location = location.ifBlank { null }
+                            )
+                        },
+                        enabled = !isPosting && postText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
                     ) {
-                        Text("Post")
+                        if (isPosting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (isPosting) "Posting..." else "Post")
                     }
                 }
             }
@@ -645,15 +771,8 @@ fun FriendItem(name: String) {
 
 @Composable
 fun NotificationsDialog(onDismiss: () -> Unit) {
-    val notifications = remember {
-        listOf(
-            Triple("John liked your post", "2m ago", Icons.Default.ThumbUp),
-            Triple("Sarah commented on your post", "5m ago", Icons.Default.Create),
-            Triple("You have a new follower", "1h ago", Icons.Default.PersonAdd),
-            Triple("Mike shared your post", "3h ago", Icons.Default.Share),
-            Triple("Emma mentioned you", "5h ago", Icons.Default.Notifications)
-        )
-    }
+    val viewModel: FeedViewModel = viewModel()
+    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -691,14 +810,45 @@ fun NotificationsDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(notifications) { (notification, time, icon) ->
-                        NotificationItem(notification, time, icon)
+                if (notifications.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = "No notifications",
+                                tint = MediumGray,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                "No notifications yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MediumGray
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(notifications) { notification ->
+                            NotificationItemCard(
+                                notification = notification,
+                                onClick = {
+                                    viewModel.markNotificationAsRead(notification.id)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -707,15 +857,24 @@ fun NotificationsDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun NotificationItem(
-    notification: String,
-    time: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector
+fun NotificationItemCard(
+    notification: Notification,
+    onClick: () -> Unit
 ) {
+    val icon = when (notification.type) {
+        NotificationType.LIKE -> Icons.Default.ThumbUp
+        NotificationType.COMMENT -> Icons.Default.Create
+        NotificationType.REPLY -> Icons.Default.Reply
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8))
+        colors = CardDefaults.cardColors(
+            containerColor = if (notification.isRead) Color(0xFFF8F8F8) else PrimaryPurple.copy(alpha = 0.1f)
+        )
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -725,7 +884,7 @@ fun NotificationItem(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(PrimaryPurple.copy(alpha = 0.1f)),
+                    .background(PrimaryPurple.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -736,8 +895,21 @@ fun NotificationItem(
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = notification, fontSize = 14.sp, color = DarkGray)
-                Text(text = time, fontSize = 12.sp, color = MediumGray)
+                Text(
+                    text = notification.message,
+                    fontSize = 14.sp,
+                    color = DarkGray,
+                    fontWeight = if (notification.isRead) FontWeight.Normal else FontWeight.SemiBold
+                )
+                // You can add timestamp formatting here if needed
+            }
+            if (!notification.isRead) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryPurple)
+                )
             }
         }
     }

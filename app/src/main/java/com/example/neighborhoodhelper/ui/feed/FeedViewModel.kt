@@ -1,118 +1,121 @@
 package com.example.neighborhoodhelper.ui.feed
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.model.Post
 import com.example.neighborhoodhelper.model.Comment
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import java.util.UUID
+import com.example.neighborhoodhelper.model.Notification
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
 class FeedViewModel : ViewModel() {
-    private val _posts = MutableStateFlow(samplePosts())
-    val posts: StateFlow<List<Post>> = _posts.asStateFlow()
+    private val repository = FirebaseRepository()
 
-    private val _comments = MutableStateFlow(sampleComments())
-    val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
+    // Posts
+    val posts: StateFlow<List<Post>> = repository.observePosts()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
-    fun accept(postId: String) {
-        _posts.update { list ->
-            list.map { if (it.id == postId) it.copy(likes = it.likes + 1) else it }
+    // Get comments for specific post - THIS IS THE CORRECT WAY
+    fun getCommentsForPost(postId: String): StateFlow<List<Comment>> {
+        return repository.observeComments(postId)
+            .catch { e ->
+                Log.w("FeedViewModel", "Error loading comments for post $postId", e)
+                emit(emptyList())
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+    }
+
+    // Notifications
+    val notifications: StateFlow<List<Notification>> = repository.observeNotifications()
+        .catch { e ->
+            Log.w("FeedViewModel", "Error loading notifications", e)
+            emit(emptyList())
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Unread notification count
+    val unreadNotificationCount: StateFlow<Int> = notifications.map { list ->
+        list.count { !it.isRead }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    // UI State
+    private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
+    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    // Create a post
+    fun createPost(content: String, imageUrl: String? = null, location: String? = null) {
+        if (content.isBlank()) {
+            _uiState.value = UiState.Error("Post content cannot be empty")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            val result = repository.createPost(content, imageUrl, location)
+            _uiState.value = if (result.isSuccess) {
+                UiState.Success("Post created successfully")
+            } else {
+                UiState.Error(result.exceptionOrNull()?.message ?: "Failed to create post")
+            }
         }
     }
 
+    // Toggle like on a post
+    fun toggleLike(postId: String) {
+        viewModelScope.launch {
+            repository.toggleLike(postId)
+        }
+    }
+
+    // Legacy method name for compatibility
+    fun accept(postId: String) = toggleLike(postId)
+
+    // Add a comment
     fun addComment(postId: String, author: String, text: String) {
         if (text.isBlank()) return
-        val id = UUID.randomUUID().toString()
-        val timestamp = "Just now"
-        val comment = Comment(
-            id = id,
-            postId = postId,
-            author = author,
-            authorAvatarUrl = "",
-            text = text,
-            timestamp = timestamp
-        )
-        _comments.update { list -> list + comment }
-        _posts.update { list ->
-            list.map { if (it.id == postId) it.copy(comments = it.comments + 1) else it }
+
+        viewModelScope.launch {
+            val result = repository.addComment(postId, text)
+            if (result.isFailure) {
+                _uiState.value = UiState.Error("Failed to add comment")
+            }
         }
     }
 
-    companion object {
-        private fun samplePosts(): List<Post> = listOf(
-            Post(
-                id = "1",
-                username = "Maishan Nadis",
-                userAvatarUrl = "",
-                timestamp = "5m",
-                content = "Lost cat in Kolabagan. White with grey spots, answers to Mimi. Please contact if seen!",
-                imageUrl = "https://images.unsplash.com/photo-1574158622682-e40e69881006?w=400",
-                likes = 10,
-                comments = 2,
-                location = "Kolabagan"
-            ),
-            Post(
-                id = "2",
-                username = "Mehedi Srabon",
-                userAvatarUrl = "",
-                timestamp = "2h",
-                content = "Looking for someone to help with moving furniture tomorrow.",
-                imageUrl = null,
-                likes = 7,
-                comments = 3,
-                location = "Mirpur"
-            ),
-            Post(
-                id = "3",
-                username = "Safwat Bushra",
-                userAvatarUrl = "",
-                timestamp = "10m",
-                content = "Anyone has charger? Type C needed urgently.",
-                imageUrl = "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=400",
-                likes = 4,
-                comments = 1,
-                location = "Dhanmondi"
-            ),
-            Post(
-                id = "4",
-                username = "Shafi Alam",
-                userAvatarUrl = "",
-                timestamp = "1h",
-                content = "Offering extra groceries to share. Have some vegetables and fruits.",
-                imageUrl = null,
-                likes = 3,
-                comments = 5,
-                location = "Banani"
-            )
-        )
+    // Mark notification as read
+    fun markNotificationAsRead(notificationId: String) {
+        viewModelScope.launch {
+            repository.markNotificationAsRead(notificationId)
+        }
+    }
 
-        private fun sampleComments(): List<Comment> = listOf(
-            Comment(
-                id = UUID.randomUUID().toString(),
-                postId = "1",
-                author = "Ayesha Khan",
-                authorAvatarUrl = "",
-                text = "I can help look for the cat near the market.",
-                timestamp = "5m"
-            ),
-            Comment(
-                id = UUID.randomUUID().toString(),
-                postId = "1",
-                author = "Rafi Ahmed",
-                authorAvatarUrl = "",
-                text = "I saw a similar cat yesterday near the park.",
-                timestamp = "10m"
-            ),
-            Comment(
-                id = UUID.randomUUID().toString(),
-                postId = "2",
-                author = "Nadia Rahman",
-                authorAvatarUrl = "",
-                text = "I have a Type C charger you can borrow!",
-                timestamp = "8m"
-            )
-        )
+    // Reset UI state
+    fun resetUiState() {
+        _uiState.value = UiState.Idle
+    }
+
+    sealed class UiState {
+        object Idle : UiState()
+        object Loading : UiState()
+        data class Success(val message: String) : UiState()
+        data class Error(val message: String) : UiState()
     }
 }

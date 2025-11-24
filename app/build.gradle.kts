@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -37,7 +38,6 @@ android {
 }
 
 dependencies {
-
     implementation("androidx.core:core-ktx:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
     implementation("androidx.activity:activity-compose:1.8.0")
@@ -50,18 +50,28 @@ dependencies {
     // Icons (Outlined/Filled) for Material3 components
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Navigation Compose for in-app navigation
+    // Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // Image loading for avatars and post images
+    // Image loading
     implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Coroutines / StateFlow
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 
     // Compose + Lifecycle integrations
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
+
+    // Firebase BoM (Bill of Materials)
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+
+    // Firebase dependencies
+    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
