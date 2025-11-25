@@ -161,3 +161,4 @@ class FeedViewModel : ViewModel() {
         data class Error(val message: String) : UiState()
     }
 }
+

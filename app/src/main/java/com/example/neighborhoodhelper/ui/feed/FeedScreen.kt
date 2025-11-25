@@ -49,7 +49,7 @@ import coil.compose.AsyncImage
 import com.example.neighborhoodhelper.model.Post
 
 // Color Palette
-val PrimaryPurple = Color(0xFF6B3FA0)
+val PrimaryPurple = Color(0xFF6C63FF)
 val LightBackground = Color(0xFFF5F5F5)
 val DarkGray = Color(0xFF424242)
 val MediumGray = Color(0xFF757575)
