@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "361348470217",
+    "project_id": "neighborhood-helper-1d2cf",
+    "storage_bucket": "neighborhood-helper-1d2cf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:361348470217:android:4d45fdc37504597f5bc418",
+        "android_client_info": {
+          "package_name": "com.example.neighborhoodhelper"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "361348470217-4clfrk06lpev883cmp68ud6ig9st8l5h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.neighborhoodhelper",
+            "certificate_hash": "931431755e56c3e49130e3c05ebcc7b3776165f5"
+          }
+        },
+        {
+          "client_id": "361348470217-tlo277lnoeoarshs7pc1rr5lhajnjssk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKHGFU3kBfBbY0bQo6S11RPOhcFMasrjg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "361348470217-tlo277lnoeoarshs7pc1rr5lhajnjssk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

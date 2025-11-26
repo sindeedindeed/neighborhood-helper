@@ -9,9 +9,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neighborhoodhelper.ui.post.CreatePostScreen
 import com.example.neighborhoodhelper.ui.post.LoadingScreen
-import com.example.neighborhoodhelper.ui.post.PostData
+import com.example.neighborhoodhelper.ui.post.PostRecord
 import com.example.neighborhoodhelper.ui.post.PostViewModel
 import com.example.neighborhoodhelper.ui.post.SuccessPostScreen
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
@@ -23,31 +24,31 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             NeighborhoodHelperTheme {
-                // Simple screen manager state
                 var screen by remember { mutableStateOf<Screen>(Screen.Create) }
-                var lastPostData by remember { mutableStateOf<PostData?>(null) }
+                var lastPostRecord by remember { mutableStateOf<PostRecord?>(null) }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
-                    // consume contentPadding by applying it to a container
                     Box(modifier = Modifier
                         .fillMaxSize()
                         .padding(contentPadding)) {
 
                         when (val s = screen) {
                             is Screen.Create -> {
-                                val vm = remember { PostViewModel() }
-                                CreatePostScreen(viewModel = vm, onPostSubmitted = { postData ->
-                                    lastPostData = postData
+                                val vm: PostViewModel = viewModel()
+                                CreatePostScreen(viewModel = vm, onPostSubmitted = { record ->
+                                    lastPostRecord = record
                                     screen = Screen.Loading
                                 })
                             }
 
                             is Screen.Loading -> {
-                                val urgent = lastPostData?.isUrgent ?: false
-                                LoadingScreen(isUrgent = urgent)
+                                val urgent = lastPostRecord?.isUrgent ?: false
+                                LoadingScreen(isUrgent = urgent, postId = lastPostRecord?.id, onAssigned = { helperId ->
+                                    // handle assignment (navigate to success or details)
+                                    screen = Screen.Success
+                                })
 
-                                // Simulate searching and then go to success screen
-                                LaunchedEffect(lastPostData) {
+                                LaunchedEffect(lastPostRecord) {
                                     delay(2000)
                                     screen = Screen.Success
                                 }

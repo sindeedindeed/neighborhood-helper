@@ -1,30 +1,22 @@
-@file:Suppress("unused")
-// LoadingScreen.kt
-// Compose screen shown after submitting a post while searching for nearby helpers. Shows a progress indicator
-// and applies a red blinking background when the request is marked as urgent.
-
 package com.example.neighborhoodhelper.ui.post
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 
 @Composable
 fun LoadingScreen(
-    isUrgent: Boolean
+    isUrgent: Boolean,
+    postId: String? = null,
+    onAssigned: ((helperId: String) -> Unit)? = null
 ) {
     val infinite = rememberInfiniteTransition()
     val blinkAlpha = if (isUrgent) {
@@ -32,12 +24,30 @@ fun LoadingScreen(
             initialValue = 0.25f,
             targetValue = 0.85f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 700, easing = LinearEasing),
+                animation = tween(700, easing = LinearEasing),
                 repeatMode = RepeatMode.Reverse
             )
         ).value
     } else {
         1f
+    }
+
+    // Firestore listener for assignment
+    LaunchedEffect(postId) {
+        if (postId != null && onAssigned != null) {
+            val docRef = Firebase.firestore.collection("posts").document(postId)
+            val subscription = docRef.addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                if (snapshot != null && snapshot.exists()) {
+                    val assigned = snapshot.getString("assignedHelperId")
+                    if (!assigned.isNullOrBlank()) {
+                        onAssigned(assigned)
+                    }
+                }
+            }
+            // remove listener when composable leaves scope
+            awaitDispose { subscription.remove() }
+        }
     }
 
     Box(
@@ -47,16 +57,26 @@ fun LoadingScreen(
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = if (isUrgent) Color.White else MaterialTheme.colorScheme.primary)
+
+            CircularProgressIndicator(
+                color = if (isUrgent) Color.White else MaterialTheme.colorScheme.primary
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
+
             Text(
                 text = "Searching for nearby helpers…",
                 color = if (isUrgent) Color.White else MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.titleMedium
             )
+
             if (isUrgent) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "URGENT REQUEST", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = "URGENT REQUEST",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
