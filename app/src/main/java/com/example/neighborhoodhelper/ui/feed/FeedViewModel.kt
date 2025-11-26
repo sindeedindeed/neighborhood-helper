@@ -136,9 +136,16 @@ class FeedViewModel : ViewModel() {
     }
     fun refreshFeed() {
         viewModelScope.launch {
-            // The StateFlow will automatically refresh since it's observing Firestore
-            // But we can force a state update if needed
-            Log.d("FeedViewModel", "Feed refreshed")
+            try {
+                Log.d("FeedViewModel", "Feed refresh triggered - Firestore will update automatically")
+                // The StateFlow automatically refreshes since it's observing Firestore in real-time
+                // Force a UI update by collecting once
+                posts.take(1).collect {
+                    Log.d("FeedViewModel", "Current posts count: ${it.size}")
+                }
+            } catch (e: Exception) {
+                Log.e("FeedViewModel", "Error during refresh", e)
+            }
         }
     }
 

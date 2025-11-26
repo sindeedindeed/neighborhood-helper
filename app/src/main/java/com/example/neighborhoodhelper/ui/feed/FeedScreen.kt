@@ -1,29 +1,27 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.neighborhoodhelper.ui.feed
 
-import androidx.compose.ui.platform.LocalContext
-import com.example.neighborhoodhelper.ui.profile.ProfileViewModel
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Badge
+
+import com.example.neighborhoodhelper.model.FriendRequest
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Image
-
-import com.example.neighborhoodhelper.utils.ImageUploadManager
-import com.example.neighborhoodhelper.model.Notification
-import com.example.neighborhoodhelper.model.NotificationType
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -35,9 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-
 import androidx.compose.ui.layout.ContentScale
-
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,7 +43,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.neighborhoodhelper.model.Notification
+import com.example.neighborhoodhelper.model.NotificationType
 import com.example.neighborhoodhelper.model.Post
+import com.example.neighborhoodhelper.ui.profile.ProfileViewModel
+import com.example.neighborhoodhelper.ui.friends.FriendsViewModel
+import com.example.neighborhoodhelper.ui.chat.ChatViewModel
+import com.example.neighborhoodhelper.utils.ImageUploadManager
 
 // Color Palette
 val PrimaryPurple = Color(0xFF6C63FF)
@@ -66,6 +69,23 @@ fun FeedScreen(navController: NavController) {
     var showNotifications by remember { mutableStateOf(false) }
     var showProfile by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableStateOf(0) }
+    var navigateToSettings by remember { mutableStateOf(false) }
+    var navigateToChatList by remember { mutableStateOf(false) }
+
+    // Handle navigation
+    LaunchedEffect(navigateToSettings) {
+        if (navigateToSettings) {
+            navController.navigate("settings")
+            navigateToSettings = false
+        }
+    }
+
+    LaunchedEffect(navigateToChatList) {
+        if (navigateToChatList) {
+            navController.navigate("chatList")
+            navigateToChatList = false
+        }
+    }
 
     FeedContent(
         posts = posts,
@@ -73,7 +93,10 @@ fun FeedScreen(navController: NavController) {
         onPostClick = { id -> navController.navigate("postDetail/$id") },
         onCreatePostClick = { showCreatePost = true },
         onMenuClick = { showMenu = true },
-        onHomeClick = { refreshTrigger++ },
+        onHomeClick = {
+            viewModel.refreshFeed()
+            refreshTrigger++
+        },
         onFriendsClick = { showFriends = true },
         onNotificationsClick = { showNotifications = true },
         onProfileClick = { showProfile = true },
@@ -84,17 +107,33 @@ fun FeedScreen(navController: NavController) {
     if (showCreatePost) {
         CreatePostDialog(onDismiss = { showCreatePost = false })
     }
+
     if (showMenu) {
         MenuDialog(onDismiss = { showMenu = false })
     }
+
     if (showFriends) {
-        FriendsDialog(onDismiss = { showFriends = false })
+        FriendsDialog(
+            onDismiss = { showFriends = false },
+            onNavigateToChat = {
+                showFriends = false
+                navigateToChatList = true
+            }
+        )
     }
+
     if (showNotifications) {
         NotificationsDialog(onDismiss = { showNotifications = false })
     }
+
     if (showProfile) {
-        ProfileDialog(onDismiss = { showProfile = false })
+        ProfileDialog(
+            onDismiss = { showProfile = false },
+            onNavigateToSettings = {
+                showProfile = false
+                navigateToSettings = true
+            }
+        )
     }
 }
 
@@ -747,6 +786,7 @@ fun MenuDialog(onDismiss: () -> Unit) {
                             ).show()
                         }
                     )
+
                     MenuItemCard(
                         icon = Icons.Default.Help,
                         text = "Help & Support",
@@ -758,6 +798,7 @@ fun MenuDialog(onDismiss: () -> Unit) {
                             ).show()
                         }
                     )
+
                     MenuItemCard(
                         icon = Icons.Default.Share,
                         text = "Share App",
@@ -775,6 +816,7 @@ fun MenuDialog(onDismiss: () -> Unit) {
                             )
                         }
                     )
+
                     MenuItemCard(
                         icon = Icons.Default.Star,
                         text = "Rate Us",
@@ -798,7 +840,7 @@ fun MenuItemCard(icon: ImageVector, text: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clickable { },
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8))
     ) {
@@ -816,68 +858,282 @@ fun MenuItemCard(icon: ImageVector, text: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun FriendsDialog(onDismiss: () -> Unit) {
+fun FriendsDialog(
+    onDismiss: () -> Unit,
+    onNavigateToChat: () -> Unit
+) {
     val context = LocalContext.current
-    val friends = remember {
-        listOf(
-            "Maishan Nadis", "Safwat Bushra", "Faiza Tashmeah",
-            "Mahdi Hasan", "Sarah Ahmed", "Rahim Khan"
-        )
-    }
+    val friendsViewModel: FriendsViewModel = viewModel()
+    val chatViewModel: ChatViewModel = viewModel()
+
+    val friends by friendsViewModel.friends.collectAsStateWithLifecycle()
+    val friendRequests by friendsViewModel.friendRequests.collectAsStateWithLifecycle()
+    val searchResults by friendsViewModel.searchResults.collectAsStateWithLifecycle()
+
+    var selectedTab by remember { mutableStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.8f),
+                .fillMaxHeight(0.85f),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column {
+                // Header
                 Surface(
                     color = PrimaryPurple,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                "Back",
-                                tint = Color.White
+                    Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    "Back",
+                                    tint = Color.White
+                                )
+                            }
+                            Text(
+                                "Friends",
+                                color = Color.White,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
                             )
                         }
-                        Text(
-                            "Friends",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
+
+                        // Tabs
+                        TabRow(
+                            selectedTabIndex = selectedTab,
+                            containerColor = PrimaryPurple,
+                            contentColor = Color.White
+                        ) {
+                            Tab(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                text = { Text("My Friends") }
+                            )
+                            Tab(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                text = {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text("Requests")
+                                        if (friendRequests.isNotEmpty()) {
+                                            Badge { Text("${friendRequests.size}") }
+                                        }
+                                    }
+                                }
+                            )
+                            Tab(
+                                selected = selectedTab == 2,
+                                onClick = { selectedTab = 2 },
+                                text = { Text("Add Friends") }
+                            )
+                        }
                     }
                 }
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(friends) { friend ->
-                        FriendItem(
-                            name = friend,
-                            onMessageClick = {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Opening chat with $friend...",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
+                when (selectedTab) {
+                    0 -> {
+                        // My Friends Tab
+                        if (friends.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "No friends",
+                                        tint = MediumGray,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        "No friends yet",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MediumGray
+                                    )
+                                    Text(
+                                        "Add friends to start connecting!",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MediumGray
+                                    )
+                                }
                             }
-                        )
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(friends) { friend ->
+                                    FriendItemWithChat(
+                                        name = friend.username,
+                                        onMessageClick = {
+                                            chatViewModel.openChatWithUser(friend.id)
+                                            onNavigateToChat()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    1 -> {
+                        // Friend Requests Tab
+                        if (friendRequests.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PersonAdd,
+                                        contentDescription = "No requests",
+                                        tint = MediumGray,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        "No friend requests",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MediumGray
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(friendRequests) { request ->
+                                    FriendRequestItem(
+                                        request = request,
+                                        onAccept = {
+                                            friendsViewModel.acceptFriendRequest(request.id, request.fromUserId)
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Friend request accepted",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        onReject = {
+                                            friendsViewModel.rejectFriendRequest(request.id, request.fromUserId)
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Friend request rejected",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        // Add Friends Tab
+                        Column(
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            // Search Bar
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    friendsViewModel.searchUsers(it)
+                                },
+                                placeholder = { Text("Search users...") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                leadingIcon = {
+                                    Icon(Icons.Default.Search, "Search")
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = PrimaryPurple
+                                )
+                            )
+
+                            if (searchQuery.isBlank()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = "Search",
+                                            tint = MediumGray,
+                                            modifier = Modifier.size(48.dp)
+                                        )
+                                        Text(
+                                            "Search for users to add as friends",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MediumGray
+                                        )
+                                    }
+                                }
+                            } else if (searchResults.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "No users found",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MediumGray
+                                    )
+                                }
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(searchResults) { user ->
+                                        UserSearchItem(
+                                            user = user,
+                                            onAddFriend = {
+                                                friendsViewModel.sendFriendRequest(user.id)
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Friend request sent to ${user.username}",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -885,6 +1141,174 @@ fun FriendsDialog(onDismiss: () -> Unit) {
     }
 }
 
+@Composable
+fun FriendItemWithChat(name: String, onMessageClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = name.firstOrNull()?.toString() ?: "U",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MediumGray
+                )
+            }
+            Text(
+                text = name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = onMessageClick,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Message", fontSize = 14.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun FriendRequestItem(
+    request: com.example.neighborhoodhelper.model.FriendRequest,
+    onAccept: () -> Unit,
+    onReject: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = request.fromUsername.firstOrNull()?.toString() ?: "U",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MediumGray
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = request.fromUsername,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Sent you a friend request",
+                    fontSize = 12.sp,
+                    color = MediumGray
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onAccept,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("Accept", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = onReject,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("Reject", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun UserSearchItem(
+    user: com.example.neighborhoodhelper.model.User,
+    onAddFriend: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = user.username.firstOrNull()?.toString() ?: "U",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MediumGray
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = user.username,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                if (user.bio.isNotBlank()) {
+                    Text(
+                        text = user.bio,
+                        fontSize = 12.sp,
+                        color = MediumGray,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Button(
+                onClick = onAddFriend,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    Icons.Default.PersonAdd,
+                    contentDescription = "Add Friend",
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("Add", fontSize = 14.sp)
+            }
+        }
+    }
+}
 @Composable
 fun FriendItem(name: String, onMessageClick: () -> Unit) {
     Card(
@@ -1021,9 +1445,12 @@ fun NotificationItemCard(
     onClick: () -> Unit
 ) {
     val icon = when (notification.type) {
-        NotificationType.LIKE -> Icons.Default.ThumbUp
-        NotificationType.COMMENT -> Icons.Default.Create
-        NotificationType.REPLY -> Icons.Default.Reply
+        "LIKE" -> Icons.Default.ThumbUp
+        "COMMENT" -> Icons.Default.Create
+        "REPLY" -> Icons.Default.Reply
+        "FRIEND_REQUEST" -> Icons.Default.PersonAdd
+        "MESSAGE" -> Icons.Default.Message
+        else -> Icons.Default.Notifications
     }
 
     Card(
@@ -1053,6 +1480,7 @@ fun NotificationItemCard(
                     modifier = Modifier.size(20.dp)
                 )
             }
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = notification.message,
@@ -1060,8 +1488,8 @@ fun NotificationItemCard(
                     color = DarkGray,
                     fontWeight = if (notification.isRead) FontWeight.Normal else FontWeight.SemiBold
                 )
-                // You can add timestamp formatting here if needed
             }
+
             if (!notification.isRead) {
                 Box(
                     modifier = Modifier
@@ -1075,9 +1503,14 @@ fun NotificationItemCard(
 }
 
 @Composable
-fun ProfileDialog(onDismiss: () -> Unit) {
+fun ProfileDialog(
+    onDismiss: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
+    val context = LocalContext.current
     val viewModel: FeedViewModel = viewModel()
     val profileViewModel: ProfileViewModel = viewModel()
+
     val currentUser by profileViewModel.currentUser.collectAsStateWithLifecycle()
 
     var isEditing by remember { mutableStateOf(false) }
@@ -1305,30 +1738,54 @@ fun ProfileDialog(onDismiss: () -> Unit) {
                                     text = "Edit Profile",
                                     onClick = { isEditing = true }
                                 )
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
                                 ProfileMenuItem(
                                     icon = Icons.Default.Settings,
                                     text = "Settings",
-                                    onClick = { /* TODO: Navigate to settings */ }
+                                    onClick = {
+                                        onNavigateToSettings()
+                                    }
                                 )
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
                                 ProfileMenuItem(
                                     icon = Icons.Default.Notifications,
                                     text = "Notification Settings",
-                                    onClick = { /* TODO: Navigate to notification settings */ }
+                                    onClick = {
+                                        onNavigateToSettings()
+                                    }
                                 )
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
                                 ProfileMenuItem(
                                     icon = Icons.Default.Lock,
                                     text = "Privacy",
-                                    onClick = { /* TODO: Navigate to privacy */ }
+                                    onClick = {
+                                        android.widget.Toast.makeText(
+                                            context,  // Use context here instead of LocalContext.current
+                                            "Privacy settings coming soon",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 )
+
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
                                 ProfileMenuItem(
                                     icon = Icons.Default.Info,
                                     text = "About",
-                                    onClick = { /* TODO: Show about dialog */ }
+                                    onClick = {
+                                        android.widget.Toast.makeText(
+                                            context,  // Use context here instead of LocalContext.current
+                                            "Neighborhood Helper v1.0\nHelping neighbors connect and support each other",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    }
                                 )
+
                             }
                         }
                     }

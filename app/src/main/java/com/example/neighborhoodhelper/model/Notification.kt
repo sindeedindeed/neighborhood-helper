@@ -10,7 +10,7 @@ data class Notification(
     val userId: String = "", // Recipient user ID
     val fromUserId: String = "", // Who triggered the notification
     val fromUsername: String = "",
-    val type: NotificationType = NotificationType.LIKE,
+    val type: String = "LIKE", // Changed to String for Firebase compatibility
     val postId: String = "",
     val commentId: String? = null,
     val message: String = "",
@@ -19,8 +19,10 @@ data class Notification(
     val createdAt: Timestamp? = null
 )
 
-enum class NotificationType {
-    LIKE,
-    COMMENT,
-    REPLY
+object NotificationType {
+    const val LIKE = "LIKE"
+    const val COMMENT = "COMMENT"
+    const val REPLY = "REPLY"
+    const val FRIEND_REQUEST = "FRIEND_REQUEST"
+    const val MESSAGE = "MESSAGE"
 }
