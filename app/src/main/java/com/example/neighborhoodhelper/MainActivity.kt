@@ -18,6 +18,13 @@ import com.example.neighborhoodhelper.ui.post.SuccessPostScreen
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
 import kotlinx.coroutines.delay
 
+// Screen navigation states
+sealed interface Screen {
+    object Create : Screen
+    object Loading : Screen
+    object Success : Screen
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,11 +72,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-sealed interface Screen {
-    object Create : Screen
-    object Loading : Screen
-    object Success : Screen
-}
 
 @Preview(showBackground = true)
 @Composable

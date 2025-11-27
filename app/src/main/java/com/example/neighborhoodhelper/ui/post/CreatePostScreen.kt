@@ -1,3 +1,4 @@
+// CreatePostScreen.kt - UI for creating a new post with image attachment and urgent flag
 package com.example.neighborhoodhelper.ui.post
 
 import android.graphics.Bitmap
@@ -38,46 +39,61 @@ fun CreatePostScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val context = LocalContext.current
 
+    // Gallery launcher to pick image from device storage
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            val input = context.contentResolver.openInputStream(it)
-            val bmp = android.graphics.BitmapFactory.decodeStream(input)
-            input?.close()
-            viewModel.setImageBitmap(bmp)
+            try {
+                val input = context.contentResolver.openInputStream(it)
+                val bmp = android.graphics.BitmapFactory.decodeStream(input)
+                input?.close()
+                viewModel.setImageBitmap(bmp)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
+    // Camera launcher to take a photo
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp: Bitmap? ->
         viewModel.setImageBitmap(bmp)
     }
 
+    // If loading, show the loading screen instead
     if (isLoading) {
-        LoadingScreen(isUrgent)
+        LoadingScreen(isUrgent = isUrgent)
         return
     }
 
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .padding(12.dp)) {
-
-        Row(modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+    ) {
+        // Header with title and post button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Text(text = "Create Post", style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = {
-                if (text.isNotBlank() || imageBitmap != null) {
-                    viewModel.submitPost { result ->
-                        result.onSuccess { record -> onPostSubmitted(record) }
-                        result.onFailure { /* show error if desired */ }
+            TextButton(
+                onClick = {
+                    if (text.isNotBlank() || imageBitmap != null) {
+                        viewModel.submitPost { result ->
+                            result.onSuccess { record -> onPostSubmitted(record) }
+                            result.onFailure { }
+                        }
                     }
-                }
-            }, enabled = !isLoading) {
+                },
+                enabled = !isLoading
+            ) {
                 Text(text = if (isLoading) "Posting..." else "Post")
             }
         }
 
+        // Main post card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
@@ -85,22 +101,31 @@ fun CreatePostScreen(
             colors = CardDefaults.cardColors(containerColor = NeutralBackground)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
+                // User header with profile picture and name
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(text = "MN", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(text = "Maishan Nadis", fontWeight = FontWeight.SemiBold)
-                        Text(text = "Public", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "Public",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // Text input field
                 OutlinedTextField(
                     value = text,
                     onValueChange = { viewModel.setText(it) },
@@ -113,16 +138,30 @@ fun CreatePostScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Display selected image if available
                 imageBitmap?.let { bmp ->
-                    Card(modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp), shape = RoundedCornerShape(8.dp)) {
-                        Image(bitmap = bmp.asImageBitmap(), contentDescription = "Selected image", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Selected image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                // Action buttons and urgent toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row {
                         TextButton(onClick = { galleryLauncher.launch("image/*") }) {
                             Text(text = "Gallery")
@@ -138,25 +177,34 @@ fun CreatePostScreen(
                         Switch(checked = isUrgent, onCheckedChange = { viewModel.setUrgent(it) })
                     }
                 }
-
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Button(onClick = {
-            if (text.isNotBlank() || imageBitmap != null) {
-                viewModel.submitPost { result ->
-                    result.onSuccess { record -> onPostSubmitted(record) }
+        // Submit button
+        Button(
+            onClick = {
+                if (text.isNotBlank() || imageBitmap != null) {
+                    viewModel.submitPost { result ->
+                        result.onSuccess { record -> onPostSubmitted(record) }
+                        result.onFailure { }
+                    }
                 }
-            }
-        }, modifier = Modifier.fillMaxWidth(), enabled = !isLoading) {
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
+        ) {
             if (isLoading) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(
+                    color = Color.White,
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(text = "Post")
         }
-
     }
 }
+

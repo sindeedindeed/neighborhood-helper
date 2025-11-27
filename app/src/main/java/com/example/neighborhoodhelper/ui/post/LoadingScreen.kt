@@ -1,3 +1,4 @@
+// LoadingScreen.kt - UI for displaying loading state while searching for nearby helpers
 package com.example.neighborhoodhelper.ui.post
 
 import androidx.compose.animation.core.*
@@ -9,8 +10,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
 
 @Composable
 fun LoadingScreen(
@@ -18,66 +17,79 @@ fun LoadingScreen(
     postId: String? = null,
     onAssigned: ((helperId: String) -> Unit)? = null
 ) {
-    val infinite = rememberInfiniteTransition()
-    val blinkAlpha = if (isUrgent) {
-        infinite.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 0.85f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(700, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            )
-        ).value
+    // Blinking animation for urgent posts
+    val infiniteTransition = rememberInfiniteTransition(label = "blink")
+    val blinkAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "blinkAlpha"
+    )
+
+    val backgroundColor = if (isUrgent) {
+        Color.Red.copy(alpha = blinkAlpha)
     } else {
-        1f
+        MaterialTheme.colorScheme.background
     }
 
-    // Firestore listener for assignment
-    LaunchedEffect(postId) {
-        if (postId != null && onAssigned != null) {
-            val docRef = Firebase.firestore.collection("posts").document(postId)
-            val subscription = docRef.addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                if (snapshot != null && snapshot.exists()) {
-                    val assigned = snapshot.getString("assignedHelperId")
-                    if (!assigned.isNullOrBlank()) {
-                        onAssigned(assigned)
-                    }
-                }
-            }
-            // remove listener when composable leaves scope
-            awaitDispose { subscription.remove() }
-        }
-    }
+    val textColor = if (isUrgent) Color.White else MaterialTheme.colorScheme.onBackground
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isUrgent) Color.Red.copy(alpha = blinkAlpha) else MaterialTheme.colorScheme.background),
+            .background(backgroundColor),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Spinner indicator
             CircularProgressIndicator(
-                color = if (isUrgent) Color.White else MaterialTheme.colorScheme.primary
+                color = if (isUrgent) Color.White else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(64.dp),
+                strokeWidth = 4.dp
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
+            // Main message
             Text(
                 text = "Searching for nearby helpers…",
-                color = if (isUrgent) Color.White else MaterialTheme.colorScheme.onBackground,
+                color = textColor,
                 style = MaterialTheme.typography.titleMedium
             )
 
+            // Urgent badge if applicable
             if (isUrgent) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "URGENT REQUEST",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge
-                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.2f), shape = MaterialTheme.shapes.small)
+                        .padding(8.dp),
+                    color = Color.Transparent
+                ) {
+                    Text(
+                        text = "⚠ URGENT REQUEST",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Subtext
+            Text(
+                text = "We are notifying nearby helpers about your request",
+                color = textColor.copy(alpha = 0.8f),
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
+

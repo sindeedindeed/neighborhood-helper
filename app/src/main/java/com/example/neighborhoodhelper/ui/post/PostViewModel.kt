@@ -1,39 +1,48 @@
+// ViewModel that holds Create Post form state and submits PostRecord objects.
+// This file intentionally uses a small in-memory PostRepository by default so the module
+// can compile and run without adding Firestore dependencies. Replace the repository
+// implementation with a Firestore-backed one when ready.
 package com.example.neighborhoodhelper.ui.post
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import java.util.*
+import java.util.UUID
 
-data class PostData(
-    val authorId: String = "user_123",
-    val authorName: String = "John Doe",
-    val authorAvatarUrl: String? = null,
-    val text: String = "",
-    val imageBitmap: Bitmap? = null,
-    val isUrgent: Boolean = false
-)
-
-// Simple serializable data for Firestore (no Bitmap).
+// Data class representing a post stored in Firestore (or local repo)
 data class PostRecord(
     val id: String = "",
-    val authorId: String = "user_123",
-    val authorName: String = "John Doe",
     val text: String = "",
-    val imageUrl: String? = null,
     val isUrgent: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis()
 )
 
-class PostViewModel(application: Application) : AndroidViewModel(application) {
+/** Simple repository contract to submit posts. */
+interface PostRepository {
+    fun submit(record: PostRecord, callback: (Result<PostRecord>) -> Unit)
+}
+
+/**
+ * In-memory fake repository used for development and to keep the module runnable
+ * without Firebase dependencies. It simulates a short network delay and succeeds.
+ */
+class FakePostRepository : PostRepository {
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun submit(record: PostRecord, callback: (Result<PostRecord>) -> Unit) {
+        // simulate network delay
+        handler.postDelayed({
+            callback(Result.success(record))
+        }, 500)
+    }
+}
+
+class PostViewModel(application: Application, private val repo: PostRepository = FakePostRepository()) : AndroidViewModel(application) {
     private val _text = MutableStateFlow("")
     val text: StateFlow<String> = _text.asStateFlow()
 
@@ -45,17 +54,6 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val firestore = Firebase.firestore
-
-    init {
-        // Initialize Firebase with Application context if not already
-        try {
-            FirebaseApp.initializeApp(application)
-        } catch (_: Exception) {
-            // Already initialized or failed silently
-        }
-    }
 
     fun setText(value: String) {
         _text.value = value
@@ -76,33 +74,27 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Submit post: writes a PostRecord to Firestore under collection `posts`.
-     * Note: Image upload is not implemented (requires Storage). We store null for imageUrl.
+     * Submit post: delegates to PostRepository. The default repo is a fake implementation
+     * that immediately returns success after a short delay. Replace repo with a Firestore
+     * implementation when Firebase is added to the project.
      */
     fun submitPost(onResult: (Result<PostRecord>) -> Unit) {
         val id = UUID.randomUUID().toString()
+
         val record = PostRecord(
             id = id,
             text = _text.value.trim(),
             isUrgent = _isUrgent.value
         )
 
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                firestore.collection("posts").document(id).set(record)
-                    .addOnSuccessListener {
-                        onResult(Result.success(record))
-                    }
-                    .addOnFailureListener { ex ->
-                        onResult(Result.failure(ex))
-                    }
-            } catch (ex: Exception) {
-                onResult(Result.failure(ex))
-            } finally {
-                _isLoading.value = false
+        _isLoading.value = true
+
+        repo.submit(record) { result ->
+            _isLoading.value = false
+            if (result.isSuccess) {
+                clear()
             }
-            clear()
+            onResult(result)
         }
     }
 }
