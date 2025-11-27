@@ -636,30 +636,40 @@ fun SignUpScreen(
                                     val userId = firebaseUser?.uid ?: ""
 
                                     firebaseUser?.sendEmailVerification()
-
-                                    saveUserDataToFirestore(
-                                        firestore,
-                                        userId,
-                                        firstName, lastName, username, email,
-                                        countryCode, phoneNumber, nid,
-                                        onSuccess = {
-                                            isLoading = false
-                                            val intent = Intent(context, EmailVerificationSentActivity::class.java)
-                                            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                                            context.startActivity(intent)
-                                            if (context is ComponentActivity) {
-                                                context.finish()
+                                        ?.addOnCompleteListener { verificationTask ->
+                                            if (verificationTask.isSuccessful) {
+                                                saveUserDataToFirestore(
+                                                    firestore,
+                                                    userId,
+                                                    firstName, lastName, username, email,
+                                                    countryCode, phoneNumber, nid,
+                                                    onSuccess = {
+                                                        isLoading = false
+                                                        val intent = Intent(context, EmailVerificationSentActivity::class.java)
+                                                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                                        context.startActivity(intent)
+                                                        if (context is ComponentActivity) {
+                                                            context.finish()
+                                                        }
+                                                    },
+                                                    onFailure = { e ->
+                                                        isLoading = false
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Error saving user data: ${e.message}",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                    }
+                                                )
+                                            } else {
+                                                isLoading = false
+                                                Toast.makeText(
+                                                    context,
+                                                    "Failed to send verification email: ${verificationTask.exception?.message}",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
                                             }
-                                        },
-                                        onFailure = { e ->
-                                            isLoading = false
-                                            Toast.makeText(
-                                                context,
-                                                "Error saving user data: ${e.message}",
-                                                Toast.LENGTH_LONG
-                                            ).show()
                                         }
-                                    )
                                 } else {
                                     isLoading = false
                                     Toast.makeText(
