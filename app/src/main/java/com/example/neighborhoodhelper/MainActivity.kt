@@ -10,10 +10,15 @@ import androidx.navigation.compose.rememberNavController
 import com.example.neighborhoodhelper.ui.map.LiveLocationScreen
 import com.example.neighborhoodhelper.ui.match.SuccessScreen
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
+import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize Firebase
+        FirebaseApp.initializeApp(this)
+
         setContent {
             NeighborhoodHelperTheme {
                 val navController = rememberNavController()

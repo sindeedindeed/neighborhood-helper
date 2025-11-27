@@ -19,10 +19,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.neighborhoodhelper.ui.theme.LightBlue
-import com.example.neighborhoodhelper.ui.theme.DarkBlue
-import com.example.neighborhoodhelper.ui.theme.White
+import com.example.neighborhoodhelper.ui.theme.DeepPrimary
+import com.example.neighborhoodhelper.ui.theme.DeepPrimaryDark
+import com.example.neighborhoodhelper.ui.theme.DarkGray
+import com.example.neighborhoodhelper.ui.theme.LightGray
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun SuccessScreen(
     context: Context,
@@ -38,8 +40,8 @@ fun SuccessScreen(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF2196F3),
-                        Color(0xFF1565C0)
+                        DeepPrimary,
+                        DeepPrimaryDark
                     )
                 )
             ),
@@ -63,7 +65,7 @@ fun SuccessScreen(
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF2196F3)),
+                        .background(DeepPrimary),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -79,7 +81,7 @@ fun SuccessScreen(
                 // Success Message
                 Text(
                     text = "Connection Successful!",
-                    color = Color(0xFF1565C0),
+                    color = DeepPrimaryDark,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -89,7 +91,7 @@ fun SuccessScreen(
 
                 Text(
                     text = "You have been successfully matched with",
-                    color = Color(0xFF424242),
+                    color = DarkGray,
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center
                 )
@@ -98,7 +100,7 @@ fun SuccessScreen(
 
                 Text(
                     text = requesterName,
-                    color = Color(0xFF1565C0),
+                    color = DeepPrimaryDark,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -110,7 +112,7 @@ fun SuccessScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))
+                    colors = CardDefaults.cardColors(containerColor = LightGray)
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -119,13 +121,13 @@ fun SuccessScreen(
                         Icon(
                             imageVector = Icons.Default.LocationOn,
                             contentDescription = "Location",
-                            tint = Color(0xFF2196F3),
+                            tint = DeepPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = requesterAddress,
-                            color = Color(0xFF424242),
+                            color = DarkGray,
                             fontSize = 16.sp
                         )
                     }
@@ -140,7 +142,7 @@ fun SuccessScreen(
                         .fillMaxWidth()
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2196F3)
+                        containerColor = DeepPrimary
                     ),
                     shape = RoundedCornerShape(28.dp),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
