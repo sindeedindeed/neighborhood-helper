@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neighborhoodhelper.ui.post.CreatePostScreen
 import com.example.neighborhoodhelper.ui.post.LoadingScreen
 import com.example.neighborhoodhelper.ui.post.PostRecord
@@ -39,9 +38,9 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .padding(contentPadding)) {
 
-                        when (val s = screen) {
+                        when (screen) {
                             is Screen.Create -> {
-                                val vm: PostViewModel = viewModel()
+                                val vm = remember { PostViewModel(application) }
                                 CreatePostScreen(viewModel = vm, onPostSubmitted = { record ->
                                     lastPostRecord = record
                                     screen = Screen.Loading
@@ -50,10 +49,7 @@ class MainActivity : ComponentActivity() {
 
                             is Screen.Loading -> {
                                 val urgent = lastPostRecord?.isUrgent ?: false
-                                LoadingScreen(isUrgent = urgent, postId = lastPostRecord?.id, onAssigned = { helperId ->
-                                    // handle assignment (navigate to success or details)
-                                    screen = Screen.Success
-                                })
+                                LoadingScreen(isUrgent = urgent)
 
                                 LaunchedEffect(lastPostRecord) {
                                     delay(2000)
@@ -75,6 +71,7 @@ class MainActivity : ComponentActivity() {
 
 @Preview(showBackground = true)
 @Composable
+@Suppress("UnusedPrivateMember")
 fun GreetingPreview() {
     NeighborhoodHelperTheme {
         SuccessPostScreen()

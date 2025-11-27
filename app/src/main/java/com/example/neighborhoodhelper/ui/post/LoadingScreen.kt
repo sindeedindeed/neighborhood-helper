@@ -13,9 +13,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun LoadingScreen(
-    isUrgent: Boolean,
-    postId: String? = null,
-    onAssigned: ((helperId: String) -> Unit)? = null
+    isUrgent: Boolean
 ) {
     // Blinking animation for urgent posts
     val infiniteTransition = rememberInfiniteTransition(label = "blink")

@@ -24,13 +24,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 private val NeutralBackground = Color(0xFFE0E0E0)
 
 @Composable
 fun CreatePostScreen(
-    viewModel: PostViewModel = viewModel(),
+    viewModel: PostViewModel,
     onPostSubmitted: (PostRecord) -> Unit = {}
 ) {
     val text by viewModel.text.collectAsState()
@@ -86,10 +85,9 @@ fun CreatePostScreen(
                             result.onFailure { }
                         }
                     }
-                },
-                enabled = !isLoading
+                }
             ) {
-                Text(text = if (isLoading) "Posting..." else "Post")
+                Text(text = "Post")
             }
         }
 
@@ -192,17 +190,8 @@ fun CreatePostScreen(
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading
+            modifier = Modifier.fillMaxWidth()
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
             Text(text = "Post")
         }
     }
