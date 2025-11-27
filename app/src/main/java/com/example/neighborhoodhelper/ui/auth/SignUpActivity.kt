@@ -750,13 +750,25 @@ private fun saveUserDataToFirestore(
     usernameDoc.set(hashMapOf("userId" to userId))
         .addOnSuccessListener {
             // Then save the user data
+            // Basic validation for country code and phone number
+            val countryCodePattern = Regex("^\\+\\d{1,4}\$")
+            val phoneNumberPattern = Regex("^\\d{6,15}\$")
+            if (!countryCodePattern.matches(countryCode)) {
+                onFailure(Exception("Invalid country code format"))
+                return@addOnSuccessListener
+            }
+            if (!phoneNumberPattern.matches(phoneNumber)) {
+                onFailure(Exception("Invalid phone number format"))
+                return@addOnSuccessListener
+            }
+
             val userData = hashMapOf(
                 "firstName" to firstName,
                 "lastName" to lastName,
                 "username" to username,
                 "email" to email,
-                "phoneNumber" to "$countryCode$phoneNumber",
                 "countryCode" to countryCode,
+                "phoneNumber" to phoneNumber,
                 "nid" to nid,
                 "createdAt" to Timestamp.now(),
                 "emailVerified" to false
