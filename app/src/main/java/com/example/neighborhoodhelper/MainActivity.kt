@@ -247,7 +247,9 @@ class MainActivity : ComponentActivity() {
         val currentUser = auth.currentUser
         if (currentUser == null) {
             Log.d(TAG, "🔐 No user signed in - Redirecting to Landing")
-            redirectToLanding()
+            // Only redirect if we're not in the process of authenticating
+            // The LaunchedEffect in setContent will handle authentication
+            // redirectToLanding()
         } else {
             Log.d(TAG, "👤 User is signed in: ${currentUser.email ?: "Anonymous"}")
         }
