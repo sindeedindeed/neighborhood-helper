@@ -1751,13 +1751,6 @@ fun ProfileDialog(
 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                                ProfileMenuItem(
-                                    icon = Icons.Default.Notifications,
-                                    text = "Notification Settings",
-                                    onClick = {
-                                        onNavigateToSettings()
-                                    }
-                                )
 
                                 ProfileMenuItem(
                                     icon = Icons.Default.Lock,
@@ -1785,6 +1778,39 @@ fun ProfileDialog(
                                         ).show()
                                     }
                                 )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                                ProfileMenuItem(
+                                    icon = Icons.Default.Logout,
+                                    text = "Logout",
+                                    onClick = {
+                                        viewModel.showLogoutDialog = true
+                                    }
+                                )
+                                val showLogoutDialog = false
+                                if (showLogoutDialog) {
+                                    AlertDialog(
+                                        onDismissRequest = { var showLogoutDialog = false },
+                                        title = { Text("Logout") },
+                                        text = { Text("Are you sure you want to logout?") },
+                                        confirmButton = {
+                                            TextButton(
+                                                onClick = {
+                                                    var showLogoutDialog = false
+                                                    // Logout logic here
+                                                }
+                                            ) {
+                                                Text("Yes", color = Color.Red)
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { var showLogoutDialog = false }) {
+                                                Text("Cancel")
+                                            }
+                                        }
+                                    )
+                                }
 
                             }
                         }

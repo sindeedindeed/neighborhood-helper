@@ -1,21 +1,25 @@
 package com.example.neighborhoodhelper.ui.settings
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neighborhoodhelper.model.UserSettings
+import com.example.neighborhoodhelper.ui.auth.LandingActivity
 import com.example.neighborhoodhelper.ui.feed.PrimaryPurple
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,6 +28,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val viewModel: SettingsViewModel = viewModel()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     var notificationsEnabled by remember { mutableStateOf(true) }
     var friendRequestNotifications by remember { mutableStateOf(true) }
@@ -31,6 +36,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var postNotifications by remember { mutableStateOf(true) }
     var soundEnabled by remember { mutableStateOf(true) }
     var vibrationEnabled by remember { mutableStateOf(true) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings) {
         settings?.let {
@@ -41,6 +47,39 @@ fun SettingsScreen(onBack: () -> Unit) {
             soundEnabled = it.soundEnabled
             vibrationEnabled = it.vibrationEnabled
         }
+    }
+
+    // Handle logout state
+    LaunchedEffect(uiState) {
+        if (uiState is SettingsViewModel.UiState.LoggedOut) {
+            val intent = Intent(context, LandingActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            context.startActivity(intent)
+        }
+    }
+
+    // Logout confirmation dialog
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Logout") },
+            text = { Text("Are you sure you want to logout?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLogoutDialog = false
+                        viewModel.logout()
+                    }
+                ) {
+                    Text("Yes", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -184,6 +223,49 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            // Account Section
+            Text(
+                "Account",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = PrimaryPurple
+            )
+
+            Card {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Logout Button
+                    TextButton(
+                        onClick = { showLogoutDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Logout",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.Red
+                                )
+                                Text(
+                                    "Sign out of your account",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.Logout,
+                                contentDescription = "Logout",
+                                tint = Color.Red
+                            )
+                        }
+                    }
+                }
+            }
+
             if (uiState is SettingsViewModel.UiState.Success) {
                 Text(
                     "Settings saved successfully",
@@ -194,6 +276,14 @@ fun SettingsScreen(onBack: () -> Unit) {
                     kotlinx.coroutines.delay(2000)
                     viewModel.resetUiState()
                 }
+            }
+
+            if (uiState is SettingsViewModel.UiState.Error) {
+                Text(
+                    (uiState as SettingsViewModel.UiState.Error).message,
+                    color = Color.Red,
+                    fontSize = 14.sp
+                )
             }
         }
     }

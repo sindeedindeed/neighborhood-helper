@@ -1,5 +1,6 @@
 package com.example.neighborhoodhelper.ui.profile
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,30 +10,35 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Logout  // ADD THIS IMPORT
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext  // ADD THIS IMPORT
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.example.neighborhoodhelper.ui.auth.LandingActivity  // ADD THIS IMPORT
 import com.example.neighborhoodhelper.ui.theme.PrimaryPurple
 
 @Composable
 fun ProfileSetupScreen(navController: NavController) {
     val viewModel: ProfileViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current  // ADD THIS LINE
 
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }  // ADD THIS LINE
 
     LaunchedEffect(uiState) {
         when (uiState) {
@@ -44,10 +50,40 @@ fun ProfileSetupScreen(navController: NavController) {
             is ProfileViewModel.UiState.Loading -> {
                 isLoading = true
             }
+            is ProfileViewModel.UiState.LoggedOut -> {  // ADD THIS BLOCK
+                // Redirect to Landing Activity
+                val intent = Intent(context, LandingActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                context.startActivity(intent)
+            }
             else -> {
                 isLoading = false
             }
         }
+    }
+
+    // ADD LOGOUT CONFIRMATION DIALOG
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Logout") },
+            text = { Text("Are you sure you want to logout?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLogoutDialog = false
+                        viewModel.logout()
+                    }
+                ) {
+                    Text("Yes", color = PrimaryPurple)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Box(
@@ -55,6 +91,20 @@ fun ProfileSetupScreen(navController: NavController) {
             .fillMaxSize()
             .background(Color(0xFFF5F5F5))
     ) {
+        // ADD LOGOUT BUTTON IN TOP RIGHT CORNER
+        IconButton(
+            onClick = { showLogoutDialog = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Logout,
+                contentDescription = "Logout",
+                tint = PrimaryPurple
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()

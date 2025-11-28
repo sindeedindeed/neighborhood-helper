@@ -53,6 +53,11 @@ android {
 }
 
 dependencies {
+    implementation("androidx.compose.material3:material3:1.2.0")
+
+    // Other compose dependencies
+    implementation("androidx.compose.ui:ui:1.6.0")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
     // Firebase BOM (Bill of Materials) - using latest version
     implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
 

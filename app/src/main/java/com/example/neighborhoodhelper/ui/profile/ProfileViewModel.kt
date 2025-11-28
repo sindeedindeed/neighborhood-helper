@@ -5,11 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.model.User
+import com.google.firebase.auth.FirebaseAuth  // ADD THIS IMPORT
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class ProfileViewModel : ViewModel() {
     private val repository = FirebaseRepository()
+    private val auth = FirebaseAuth.getInstance()  // ADD THIS LINE
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -65,10 +67,25 @@ class ProfileViewModel : ViewModel() {
         }
     }
 
+    // ADD THIS NEW FUNCTION
+    fun logout() {
+        viewModelScope.launch {
+            try {
+                auth.signOut()
+                Log.d("ProfileViewModel", "User logged out successfully")
+                _uiState.value = UiState.LoggedOut
+            } catch (e: Exception) {
+                Log.e("ProfileViewModel", "Logout failed", e)
+                _uiState.value = UiState.Error("Logout failed: ${e.message}")
+            }
+        }
+    }
+
     sealed class UiState {
         object Idle : UiState()
         object Loading : UiState()
         data class Success(val message: String) : UiState()
         data class Error(val message: String) : UiState()
+        object LoggedOut : UiState()  // ADD THIS NEW STATE
     }
 }

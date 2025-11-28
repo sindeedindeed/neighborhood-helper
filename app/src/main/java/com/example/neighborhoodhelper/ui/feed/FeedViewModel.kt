@@ -14,6 +14,11 @@ import android.net.Uri
 import com.example.neighborhoodhelper.utils.ImageUploadManager
 
 class FeedViewModel : ViewModel() {
+    var showLogoutDialog: Boolean
+        get() {
+            TODO()
+        }
+        set(value) {}
     private val repository = FirebaseRepository()
 
     // Posts
