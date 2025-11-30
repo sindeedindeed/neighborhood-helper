@@ -2,6 +2,7 @@
 package com.example.neighborhoodhelper.ui.details
 
 import androidx.compose.runtime.remember
+import com.google.firebase.auth.FirebaseAuth
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -32,6 +33,7 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.neighborhoodhelper.ui.components.CommentItem
 import com.example.neighborhoodhelper.ui.feed.FeedViewModel
+
 
 val PrimaryPurple = Color(0xFF6B3FA0)
 val LightBackground = Color(0xFFF5F5F5)
@@ -276,15 +278,19 @@ fun PostDetailScreen(navController: NavController, postId: String) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid }
+                        val isWilling = post.willingUsers.contains(currentUserId)
+
                         OutlinedButton(
-                            onClick = { viewModel.toggleLike(postId) },
+                            onClick = { viewModel.accept(postId) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(24.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = PrimaryPurple
+                                containerColor = if (isWilling) PrimaryPurple else Color.Transparent,
+                                contentColor = if (isWilling) Color.White else PrimaryPurple
                             )
                         ) {
-                            Text("Willing")
+                            Text(if (isWilling) "Willing ✓" else "Willing")
                         }
 
                         Button(

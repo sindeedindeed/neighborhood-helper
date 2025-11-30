@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.text.get
+
 
 class FirebaseRepository {
     private val firestore = FirebaseFirestore.getInstance()
@@ -702,6 +704,41 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
+    suspend fun toggleWilling(postId: String): Result<Boolean> {
+        return try {
+            val currentUserId = auth.currentUser?.uid ?: return Result.failure(Exception("Not logged in"))
+            val postRef = firestore.collection("posts").document(postId)  // Changed from db to firestore
+
+            val postSnapshot = postRef.get().await()
+            val willingUsers = postSnapshot.get("willingUsers") as? List<String> ?: emptyList()
+
+            val isCurrentlyWilling = willingUsers.contains(currentUserId)
+
+            if (isCurrentlyWilling) {
+                // Remove user from willing list
+                postRef.update(
+                    mapOf(
+                        "willingUsers" to FieldValue.arrayRemove(currentUserId),
+                        "likes" to FieldValue.increment(-1)  // Fixed: Use FieldValue.increment
+                    )
+                ).await()
+                Result.success(false)
+            } else {
+                // Add user to willing list
+                postRef.update(
+                    mapOf(
+                        "willingUsers" to FieldValue.arrayUnion(currentUserId),
+                        "likes" to FieldValue.increment(1)  // Fixed: Use FieldValue.increment
+                    )
+                ).await()
+                Result.success(true)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+
 
     // Update user settings
     suspend fun updateUserSettings(settings: UserSettings): Result<Unit> {
@@ -715,6 +752,7 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
+
 
     // Update FCM token
     suspend fun updateFcmToken(token: String): Result<Unit> {

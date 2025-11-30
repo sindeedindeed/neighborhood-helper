@@ -7,6 +7,7 @@ import com.google.firebase.firestore.ServerTimestamp
 data class Post(
     @DocumentId
     val id: String = "",
+    val willingUsers: List<String> = emptyList(),
     val userId: String = "",
     val username: String = "",
     val userAvatarUrl: String = "",
@@ -19,4 +20,5 @@ data class Post(
     @ServerTimestamp
     val createdAt: Timestamp? = null,
     val timestamp: String = "" // Human-readable time (e.g., "5m", "2h")
+
 )

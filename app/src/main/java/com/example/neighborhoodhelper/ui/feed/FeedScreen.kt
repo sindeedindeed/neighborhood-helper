@@ -6,7 +6,9 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Badge
 
 import com.example.neighborhoodhelper.model.FriendRequest
-
+import android.widget.Toast
+import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.material.icons.filled.VolunteerActivism
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,6 +52,7 @@ import com.example.neighborhoodhelper.ui.profile.ProfileViewModel
 import com.example.neighborhoodhelper.ui.friends.FriendsViewModel
 import com.example.neighborhoodhelper.ui.chat.ChatViewModel
 import com.example.neighborhoodhelper.utils.ImageUploadManager
+import kotlin.inc
 
 // Color Palette
 val PrimaryPurple = Color(0xFF6C63FF)
@@ -59,9 +62,10 @@ val MediumGray = Color(0xFF757575)
 
 @Composable
 fun FeedScreen(navController: NavController) {
-    val viewModel: FeedViewModel = viewModel()
+    val viewModel: FeedViewModel = viewModel() // Keep this at the top
     val postsState = viewModel.posts.collectAsStateWithLifecycle()
     val posts = postsState.value
+
 
     var showCreatePost by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
@@ -100,8 +104,10 @@ fun FeedScreen(navController: NavController) {
         onFriendsClick = { showFriends = true },
         onNotificationsClick = { showNotifications = true },
         onProfileClick = { showProfile = true },
-        refreshTrigger = refreshTrigger
+        refreshTrigger = refreshTrigger,
+        viewModel = viewModel // ✅ Pass the viewModel
     )
+
 
     // Dialogs
     if (showCreatePost) {
@@ -123,8 +129,22 @@ fun FeedScreen(navController: NavController) {
     }
 
     if (showNotifications) {
-        NotificationsDialog(onDismiss = { showNotifications = false })
+
+        LaunchedEffect(showNotifications) {
+            if (showNotifications) {
+                viewModel.markAllNotificationsAsViewed()
+            }
+        }
+
+        NotificationsDialog(
+            onDismiss = { showNotifications = false },
+            navController = navController,
+            viewModel = viewModel // Pass the same viewModel instance
+        )
+
     }
+
+
 
     if (showProfile) {
         ProfileDialog(
@@ -148,7 +168,8 @@ fun FeedContent(
     onFriendsClick: () -> Unit,
     onNotificationsClick: () -> Unit,
     onProfileClick: () -> Unit,
-    refreshTrigger: Int
+    refreshTrigger: Int,
+    viewModel: FeedViewModel // ✅ Add this parameter
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -166,9 +187,11 @@ fun FeedContent(
                 onHomeClick = onHomeClick,
                 onFriendsClick = onFriendsClick,
                 onNotificationsClick = onNotificationsClick,
-                onProfileClick = onProfileClick
+                onProfileClick = onProfileClick,
+                viewModel = viewModel // ✅ Add this
             )
         }
+
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -425,21 +448,30 @@ fun PostCard(
             }
 
             // Action Buttons
+            // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                val viewModel: FeedViewModel = viewModel()
+                val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid }
+                val isWilling = post.willingUsers.contains(currentUserId)
+
                 OutlinedButton(
                     onClick = onWilling,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.White,
-                        contentColor = DarkGray
+                        containerColor = if (isWilling) PrimaryPurple else Color.White,
+                        contentColor = if (isWilling) Color.White else DarkGray
                     ),
-                    border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+                    border = BorderStroke(1.dp, if (isWilling) PrimaryPurple else Color(0xFFE0E0E0))
                 ) {
-                    Text("Willing", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    Text(
+                        text = if (isWilling) "Willing ✓" else "Willing",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
                 }
 
                 Button(
@@ -454,6 +486,8 @@ fun PostCard(
                     Text("Comment", fontWeight = FontWeight.Medium, fontSize = 14.sp)
                 }
             }
+
+
         }
     }
 }
@@ -463,9 +497,9 @@ fun CustomBottomBar(
     onHomeClick: () -> Unit,
     onFriendsClick: () -> Unit,
     onNotificationsClick: () -> Unit,
-    onProfileClick: () -> Unit
+    onProfileClick: () -> Unit,
+    viewModel: FeedViewModel // ✅ Add this parameter
 ) {
-    val viewModel: FeedViewModel = viewModel()
     val unreadCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -706,30 +740,39 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                     }
                     Button(
                         onClick = {
-                            viewModel.createPostWithImage(
-                                content = postText,
-                                imageUri = selectedImageUri,
-                                location = location.ifBlank { null },
-                                context = context
-                            )
+                            if (postText.isNotBlank()) {
+                                isPosting = true
+                                viewModel.createPostWithImage(
+                                    content = postText,
+                                    imageUri = selectedImageUri,
+                                    location = location.ifBlank { null },
+                                    context = context
+                                )
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Please write something",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         },
-                        enabled = !isPosting && postText.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                        enabled = postText.isNotBlank() && !isPosting,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryPurple
+                        )
                     ) {
-                        if (isPosting || isUploadingImage) {
+                        if (isPosting) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                                 color = Color.White,
                                 strokeWidth = 2.dp
                             )
-                            Spacer(Modifier.width(8.dp))
+                        } else {
+                            Text("Post")
                         }
-                        Text(
-                            if (isUploadingImage) "Uploading..."
-                            else if (isPosting) "Posting..."
-                            else "Post"
-                        )
                     }
+
                 }
             }
         }
@@ -1353,9 +1396,13 @@ fun FriendItem(name: String, onMessageClick: () -> Unit) {
 }
 
 @Composable
-fun NotificationsDialog(onDismiss: () -> Unit) {
-    val viewModel: FeedViewModel = viewModel()
+fun NotificationsDialog(
+    onDismiss: () -> Unit,
+    navController: NavController,
+    viewModel: FeedViewModel // ✅ Add this parameter
+) {
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1428,7 +1475,36 @@ fun NotificationsDialog(onDismiss: () -> Unit) {
                             NotificationItemCard(
                                 notification = notification,
                                 onClick = {
-                                    viewModel.markNotificationAsRead(notification.id)
+                                    if (notification.postId.isNotBlank()) {
+                                        viewModel.navigateToPostFromNotification(
+                                            notification.postId,
+                                            notification.id,
+                                            navController
+                                        )
+                                        onDismiss()
+                                    } else {
+                                        viewModel.markNotificationAsRead(notification.id)
+                                    }
+                                },
+                                onAccept = {
+                                    viewModel.acceptWillingRequest(
+                                        notification.id,
+                                        notification.postId,
+                                        notification.fromUserId
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        "Accepted willing request from ${notification.fromUsername}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onReject = {
+                                    viewModel.rejectWillingRequest(notification.id)
+                                    Toast.makeText(
+                                        context,
+                                        "Rejected willing request",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             )
                         }
@@ -1439,17 +1515,21 @@ fun NotificationsDialog(onDismiss: () -> Unit) {
     }
 }
 
+
 @Composable
 fun NotificationItemCard(
     notification: Notification,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAccept: () -> Unit = {},
+    onReject: () -> Unit = {}
 ) {
     val icon = when (notification.type) {
-        "LIKE" -> Icons.Default.ThumbUp
-        "COMMENT" -> Icons.Default.Create
-        "REPLY" -> Icons.Default.Reply
-        "FRIEND_REQUEST" -> Icons.Default.PersonAdd
-        "MESSAGE" -> Icons.Default.Message
+        NotificationType.LIKE -> Icons.Default.ThumbUp
+        NotificationType.COMMENT -> Icons.Default.Create
+        NotificationType.REPLY -> Icons.Default.Reply
+        NotificationType.FRIEND_REQUEST -> Icons.Default.PersonAdd
+        NotificationType.MESSAGE -> Icons.Default.Message
+        NotificationType.WILLING -> Icons.Default.VolunteerActivism
         else -> Icons.Default.Notifications
     }
 
@@ -1459,48 +1539,98 @@ fun NotificationItemCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (notification.isRead) Color(0xFFF8F8F8) else PrimaryPurple.copy(alpha = 0.1f)
+            containerColor = if (notification.isRead)
+                Color(0xFFF8F8F8)
+            else
+                PrimaryPurple.copy(alpha = 0.1f)
         )
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(PrimaryPurple.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = PrimaryPurple,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = notification.message,
-                    fontSize = 14.sp,
-                    color = DarkGray,
-                    fontWeight = if (notification.isRead) FontWeight.Normal else FontWeight.SemiBold
-                )
-            }
-
-            if (!notification.isRead) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
-                        .background(PrimaryPurple)
+                        .background(PrimaryPurple.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = PrimaryPurple,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = notification.message,
+                        fontSize = 14.sp,
+                        color = DarkGray,
+                        fontWeight = if (notification.isRead)
+                            FontWeight.Normal
+                        else
+                            FontWeight.SemiBold
+                    )
+                }
+
+                if (!notification.isRead) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color.Red)
+                    )
+                }
+            }
+
+            if (notification.type == NotificationType.WILLING &&
+                notification.requiresAction &&
+                !notification.actionTaken) {
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onAccept,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryPurple
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Accept", fontSize = 12.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = onReject,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Reject", fontSize = 12.sp, color = Color.Red)
+                    }
+                }
+            }
+
+            if (notification.actionTaken) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Action taken",
+                    fontSize = 12.sp,
+                    color = MediumGray,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                 )
             }
         }
     }
 }
+
 
 @Composable
 fun ProfileDialog(
@@ -1518,6 +1648,8 @@ fun ProfileDialog(
     var userEmail by remember { mutableStateOf("") }
     var userPhone by remember { mutableStateOf("") }
     var userBio by remember { mutableStateOf("") }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
 
     // Load current user data
     LaunchedEffect(currentUser) {
@@ -1785,32 +1917,35 @@ fun ProfileDialog(
                                     icon = Icons.Default.Logout,
                                     text = "Logout",
                                     onClick = {
-                                        viewModel.showLogoutDialog = true
+                                        showLogoutDialog = true
                                     }
                                 )
-                                val showLogoutDialog = false
+
+                                // Logout Confirmation Dialog
                                 if (showLogoutDialog) {
                                     AlertDialog(
-                                        onDismissRequest = { var showLogoutDialog = false },
+                                        onDismissRequest = { showLogoutDialog = false },
                                         title = { Text("Logout") },
                                         text = { Text("Are you sure you want to logout?") },
                                         confirmButton = {
                                             TextButton(
                                                 onClick = {
-                                                    var showLogoutDialog = false
-                                                    // Logout logic here
+                                                    showLogoutDialog = false
+                                                    profileViewModel.logout()
+                                                    onDismiss()
                                                 }
                                             ) {
                                                 Text("Yes", color = Color.Red)
                                             }
                                         },
                                         dismissButton = {
-                                            TextButton(onClick = { var showLogoutDialog = false }) {
+                                            TextButton(onClick = { showLogoutDialog = false }) {
                                                 Text("Cancel")
                                             }
                                         }
                                     )
                                 }
+
 
                             }
                         }
