@@ -5,7 +5,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Badge
 
-import com.example.neighborhoodhelper.model.FriendRequest
 import android.widget.Toast
 import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.material.icons.filled.VolunteerActivism
@@ -46,11 +45,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.neighborhoodhelper.model.Post
+import com.example.neighborhoodhelper.model.TaskCategory
+import com.example.neighborhoodhelper.model.FriendRequest
 import com.example.neighborhoodhelper.ui.profile.ProfileViewModel
 import com.example.neighborhoodhelper.ui.friends.FriendsViewModel
 import com.example.neighborhoodhelper.ui.chat.ChatViewModel
 import com.example.neighborhoodhelper.utils.ImageUploadManager
-import kotlin.inc
 import com.example.neighborhoodhelper.data.AppNotification
 
 
@@ -174,6 +174,7 @@ fun FeedContent(
     viewModel: FeedViewModel // ✅ Add this parameter
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf<TaskCategory>(TaskCategory.ALL) }
 
     Scaffold(
         containerColor = LightBackground,
@@ -197,30 +198,42 @@ fun FeedContent(
         }
 
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Create Post Button
-            item {
-                CreatePostButton(onClick = onCreatePostClick)
-            }
+        Column(modifier = Modifier.padding(innerPadding)) {
+            // Category Filter Bar
+            com.example.neighborhoodhelper.ui.components.CategoryFilterBar(
+                selectedCategory = selectedCategory,
+                onCategorySelected = { selectedCategory = it }
+            )
 
-            // Filter posts by search query
-            val filteredPosts = if (searchQuery.isBlank()) posts else posts.filter {
-                it.username.contains(searchQuery, true) || it.content.contains(searchQuery, true)
-            }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Create Post Button
+                item {
+                    CreatePostButton(onClick = onCreatePostClick)
+                }
 
-            itemsIndexed(filteredPosts, key = { _, item -> item.id }) { _, post ->
-                PostCard(
-                    post = post,
-                    onWilling = { onWilling(post.id) },
-                    onClick = { onPostClick(post.id) }
-                )
+                // Filter posts by search query and category
+                val filteredPosts = posts.filter {
+                    val matchesSearch = searchQuery.isBlank() ||
+                        it.username.contains(searchQuery, true) ||
+                        it.content.contains(searchQuery, true)
+                    val matchesCategory = selectedCategory == TaskCategory.ALL ||
+                        it.category == selectedCategory.name
+                    matchesSearch && matchesCategory
+                }
+
+                itemsIndexed(filteredPosts, key = { _, item -> item.id }) { _, post ->
+                    PostCard(
+                        post = post,
+                        onWilling = { onWilling(post.id) },
+                        onClick = { onPostClick(post.id) }
+                    )
+                }
             }
         }
     }
@@ -355,6 +368,45 @@ fun PostCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Category and Status badges
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val category = TaskCategory.fromString(post.category)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(category.color.copy(alpha = 0.15f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = category.icon,
+                                contentDescription = category.displayName,
+                                tint = category.color,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = category.displayName,
+                                color = category.color,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+                com.example.neighborhoodhelper.ui.components.TaskStatusBadge(status = post.status)
+            }
+
             // User Info
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -372,7 +424,7 @@ fun PostCard(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = post.username,
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -583,11 +635,12 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var postText by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf<TaskCategory>(TaskCategory.OTHER) }
+    var showCategoryDropdown by remember { mutableStateOf(false) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var isPosting by remember { mutableStateOf(false) }
-    var isUploadingImage by remember { mutableStateOf(false) }
 
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val imageUploadManager = remember { ImageUploadManager() }
 
     // Image picker launcher
@@ -602,7 +655,6 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
         when (uiState) {
             is FeedViewModel.UiState.Success -> {
                 isPosting = false
-                isUploadingImage = false
                 postText = ""
                 location = ""
                 selectedImageUri = null
@@ -611,7 +663,6 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
             }
             is FeedViewModel.UiState.Error -> {
                 isPosting = false
-                isUploadingImage = false
             }
             is FeedViewModel.UiState.Loading -> {
                 isPosting = true
@@ -707,6 +758,63 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                     }
                 }
 
+                // Category Selector
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { showCategoryDropdown = !showCategoryDropdown },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isPosting,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = selectedCategory.color
+                        ),
+                        border = BorderStroke(1.dp, selectedCategory.color)
+                    ) {
+                        Icon(
+                            imageVector = selectedCategory.icon,
+                            contentDescription = selectedCategory.displayName,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = selectedCategory.displayName,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = if (showCategoryDropdown) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Toggle dropdown"
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showCategoryDropdown,
+                        onDismissRequest = { showCategoryDropdown = false },
+                        modifier = Modifier.fillMaxWidth(0.85f)
+                    ) {
+                        TaskCategory.entries.filter { it != TaskCategory.ALL }.forEach { category ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = category.icon,
+                                            contentDescription = category.displayName,
+                                            tint = category.color,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(category.displayName)
+                                    }
+                                },
+                                onClick = {
+                                    selectedCategory = category
+                                    showCategoryDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = location,
                     onValueChange = { location = it },
@@ -752,6 +860,7 @@ fun CreatePostDialog(onDismiss: () -> Unit) {
                                     content = postText,
                                     imageUri = selectedImageUri,
                                     location = location.ifBlank { null },
+                                    category = selectedCategory.name,
                                     context = context
                                 )
                             } else {

@@ -270,6 +270,55 @@ class MainActivity : ComponentActivity() {
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
+
+                                composable("taskHistory") {
+                                    com.example.neighborhoodhelper.ui.history.TaskHistoryScreen(
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+
+                                composable(
+                                    route = "matchTracking/{matchId}",
+                                    arguments = listOf(navArgument("matchId") { type = NavType.StringType })
+                                ) { backStackEntry ->
+                                    val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+                                    com.example.neighborhoodhelper.ui.match.MatchTrackingScreen(
+                                        matchId = matchId,
+                                        onBack = { navController.popBackStack() },
+                                        onComplete = {
+                                            navController.navigate("taskHistory") {
+                                                popUpTo("feed") { inclusive = false }
+                                            }
+                                        }
+                                    )
+                                }
+
+                                composable("settings") {
+                                    com.example.neighborhoodhelper.ui.settings.SettingsScreen(
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+
+                                composable("chatList") {
+                                    com.example.neighborhoodhelper.ui.chat.ChatListScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onChatRoomClick = { roomId ->
+                                            navController.navigate("chat/$roomId")
+                                        }
+                                    )
+                                }
+
+                                composable(
+                                    route = "chat/{roomId}",
+                                    arguments = listOf(navArgument("roomId") { type = NavType.StringType })
+                                ) { backStackEntry ->
+                                    val roomId = backStackEntry.arguments?.getString("roomId") ?: ""
+                                    com.example.neighborhoodhelper.ui.chat.ChatScreen(
+                                        roomId = roomId,
+                                        otherUserName = "User", // TODO: Pass actual user name from chat list
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
                             }
                         }
                     }

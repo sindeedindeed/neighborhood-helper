@@ -75,7 +75,8 @@ class FirebaseRepository {
     suspend fun createPost(
         content: String,
         imageUrl: String?,
-        location: String?
+        location: String?,
+        category: String = "OTHER"
     ): Result<String> {
         return try {
             val user = getCurrentUser() ?: return Result.failure(Exception("User not authenticated"))
@@ -87,6 +88,8 @@ class FirebaseRepository {
                 "content" to content,
                 "imageUrl" to imageUrl,
                 "location" to location,
+                "category" to category,
+                "status" to "active",
                 "likes" to 0,
                 "likedBy" to emptyList<String>(),
                 "comments" to 0,
@@ -1052,7 +1055,7 @@ class FirebaseRepository {
 
             Result.success(willingUser)
         } catch (e: Exception) {
-            Log.e("FirebaseRepository", "Error accepting willing user", e)
+            Log.e("FirebaseRepo", "Error accepting willing user", e)
             Result.failure(e)
         }
     }
@@ -1072,7 +1075,7 @@ class FirebaseRepository {
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e("FirebaseRepository", "Error rejecting willing user", e)
+            Log.e("FirebaseRepo", "Error rejecting willing user", e)
             Result.failure(e)
         }
     }
@@ -1084,6 +1087,202 @@ class FirebaseRepository {
             userDoc.getString("fcmToken")
         } catch (e: Exception) {
             null
+        }
+    }
+
+    // ============ RATING OPERATIONS ============
+
+    suspend fun submitRating(
+        postId: String,
+        toUserId: String,
+        rating: Float,
+        review: String,
+        category: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val currentUser = getCurrentUser() ?: return@withContext Result.failure(Exception("Not authenticated"))
+
+            val userRating = hashMapOf(
+                "postId" to postId,
+                "fromUserId" to currentUser.id,
+                "fromUsername" to currentUser.username,
+                "toUserId" to toUserId,
+                "rating" to rating,
+                "review" to review,
+                "category" to category,
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+
+            firestore.collection("userRatings").add(userRating).await()
+            updateUserRating(toUserId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error submitting rating", e)
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun updateUserRating(userId: String) {
+        try {
+            val ratingsSnapshot = firestore.collection("userRatings")
+                .whereEqualTo("toUserId", userId)
+                .get()
+                .await()
+
+            val ratings = ratingsSnapshot.documents.mapNotNull {
+                it.getDouble("rating")?.toFloat()
+            }
+
+            if (ratings.isNotEmpty()) {
+                val avgRating = ratings.average().toFloat()
+                val totalRatings = ratings.size
+
+                usersCollection.document(userId).update(
+                    mapOf(
+                        "averageRating" to avgRating,
+                        "totalRatings" to totalRatings
+                    )
+                ).await()
+            }
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error updating user rating", e)
+        }
+    }
+
+    // ============ TASK HISTORY OPERATIONS ============
+
+    suspend fun getTaskHistory(userId: String): Result<List<TaskHistory>> = withContext(Dispatchers.IO) {
+        try {
+            val asRequester = firestore.collection("taskHistory")
+                .whereEqualTo("requesterId", userId)
+                .get()
+                .await()
+
+            val asHelper = firestore.collection("taskHistory")
+                .whereEqualTo("helperId", userId)
+                .get()
+                .await()
+
+            val history = (asRequester.documents + asHelper.documents)
+                .mapNotNull { it.toObject(TaskHistory::class.java) }
+                .sortedByDescending { it.completedAt }
+
+            Result.success(history)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error getting task history", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateTaskHistoryRating(
+        taskHistoryId: String,
+        isRequester: Boolean,
+        rating: Float,
+        review: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val updates = if (isRequester) {
+                mapOf("requesterRating" to rating, "requesterReview" to review)
+            } else {
+                mapOf("helperRating" to rating, "helperReview" to review)
+            }
+
+            firestore.collection("taskHistory").document(taskHistoryId)
+                .update(updates)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error updating task history rating", e)
+            Result.failure(e)
+        }
+    }
+
+    // ============ ACTIVE MATCH OPERATIONS ============
+
+    fun observeActiveMatch(matchId: String): Flow<ActiveMatch?> = callbackFlow {
+        val listener = firestore.collection("activeMatches").document(matchId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirebaseRepo", "Error observing active match", error)
+                    close(error)
+                    return@addSnapshotListener
+                }
+
+                val match = snapshot?.toObject(ActiveMatch::class.java)
+                trySend(match)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun updateMatchLocation(
+        matchId: String,
+        isHelper: Boolean,
+        latitude: Double,
+        longitude: Double,
+        distance: Float
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val updates = if (isHelper) {
+                mapOf(
+                    "helperLat" to latitude,
+                    "helperLon" to longitude,
+                    "distance" to distance,
+                    "lastUpdated" to FieldValue.serverTimestamp()
+                )
+            } else {
+                mapOf(
+                    "requesterLat" to latitude,
+                    "requesterLon" to longitude,
+                    "distance" to distance,
+                    "lastUpdated" to FieldValue.serverTimestamp()
+                )
+            }
+
+            firestore.collection("activeMatches").document(matchId)
+                .update(updates)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error updating match location", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateMatchProximityReached(matchId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            firestore.collection("activeMatches").document(matchId)
+                .update(
+                    mapOf(
+                        "isProximityReached" to true,
+                        "status" to "arrived"
+                    )
+                )
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error updating proximity status", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun completeActiveMatch(matchId: String, postId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            firestore.collection("activeMatches").document(matchId)
+                .update("status", "completed")
+                .await()
+
+            postsCollection.document(postId)
+                .update("status", "completed")
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error completing match", e)
+            Result.failure(e)
         }
     }
 }

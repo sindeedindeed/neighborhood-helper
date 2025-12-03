@@ -76,7 +76,7 @@ class FeedViewModel : ViewModel() {
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     // Create a post
-    fun createPost(content: String, imageUrl: String? = null, location: String? = null) {
+    fun createPost(content: String, imageUrl: String? = null, location: String? = null, category: String = "OTHER") {
         if (content.isBlank()) {
             _uiState.value = UiState.Error("Post content cannot be empty")
             return
@@ -84,7 +84,7 @@ class FeedViewModel : ViewModel() {
 
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            val result = repository.createPost(content, imageUrl, location)
+            val result = repository.createPost(content, imageUrl, location, category)
             _uiState.value = if (result.isSuccess) {
                 UiState.Success("Post created successfully")
             } else {
@@ -93,7 +93,7 @@ class FeedViewModel : ViewModel() {
         }
     }
 
-    fun createPostWithImage(content: String, imageUri: Uri?, location: String?, context: Context) {
+    fun createPostWithImage(content: String, imageUri: Uri?, location: String?, category: String = "OTHER", context: Context) {
         if (content.isBlank()) {
             _uiState.value = UiState.Error("Post content cannot be empty")
             return
@@ -121,7 +121,7 @@ class FeedViewModel : ViewModel() {
                     null
                 }
 
-                val result = repository.createPost(content, imageUrl, location)
+                val result = repository.createPost(content, imageUrl, location, category)
                 _uiState.value = if (result.isSuccess) {
                     UiState.Success("Post created successfully")
                 } else {

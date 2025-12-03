@@ -12,11 +12,17 @@ data class Post(
     val content: String = "",
     val imageUrl: String? = null,
     val location: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val likes: Int = 0,
     val comments: Int = 0,
     val timestamp: String = "",
     val willingUsers: List<String> = emptyList(),
-    val status: String = "active", // active, matched, completed, cancelled
+    val status: String = "active", // active, matched, in_progress, completed, cancelled
+    val category: String = "OTHER", // TaskCategory enum name
+    val matchedHelperId: String? = null, // ID of matched helper
+    val matchedHelperName: String? = null,
+    val activeMatchId: String? = null, // Reference to ActiveMatch document
     val willingUserDetails: List<WillingUser> = emptyList()
 )
 
