@@ -1,3 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Neighborhood Helper</string>
+
+    <!-- Web Client ID from Firebase Console for Google Sign-In -->
+    <string name="default_web_client_id" translatable="false">361348470217-tlo277lnoeoarshs7pc1rr5lhajnjssk.apps.googleusercontent.com</string>
 </resources>
