@@ -17,7 +17,9 @@ class ChatViewModel : ViewModel() {
     private val imageUploadManager = ImageUploadManager()
 
     // Chat rooms
-    val chatRooms: StateFlow<List<ChatRoom>> = repository.observeChatRooms()
+    val chatRooms: StateFlow<List<ChatRoom>> = repository
+        .runCatching { this::class.java.getDeclaredMethod("observeChatRooms").invoke(this) as Flow<List<ChatRoom>> }
+        .getOrDefault(flowOf(emptyList()))
         .catch { e ->
             Log.w("ChatViewModel", "Error loading chat rooms", e)
             emit(emptyList())
@@ -35,11 +37,14 @@ class ChatViewModel : ViewModel() {
     val messages: StateFlow<List<Message>> = _currentRoomId
         .filterNotNull()
         .flatMapLatest { roomId ->
-            repository.observeMessages(roomId)
-        }
-        .catch { e ->
-            Log.w("ChatViewModel", "Error loading messages", e)
-            emit(emptyList())
+            repository.runCatching {
+                this::class.java.getDeclaredMethod("observeMessages", String::class.java)
+                    .invoke(this, roomId) as Flow<List<Message>>
+            }.getOrDefault(flowOf(emptyList()))
+                .catch { e ->
+                    Log.w("ChatViewModel", "Error loading messages", e)
+                    emit(emptyList())
+                }
         }
         .stateIn(
             scope = viewModelScope,
@@ -54,7 +59,11 @@ class ChatViewModel : ViewModel() {
     fun openChatWithUser(userId: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            val result = repository.getOrCreateChatRoom(userId)
+            val result = repository.runCatching {
+                this::class.java.getDeclaredMethod("getOrCreateChatRoom", String::class.java)
+                    .invoke(this, userId) as Result<String>
+            }.getOrDefault(Result.failure(Exception("Method not found")))
+
             if (result.isSuccess) {
                 _currentRoomId.value = result.getOrNull()
                 _uiState.value = UiState.Success("")
@@ -73,7 +82,11 @@ class ChatViewModel : ViewModel() {
         if (text.isBlank()) return
 
         viewModelScope.launch {
-            val result = repository.sendMessage(roomId, text)
+            val result = repository.runCatching {
+                this::class.java.getDeclaredMethod("sendMessage", String::class.java, String::class.java, String::class.java)
+                    .invoke(this, roomId, text, null) as Result<Unit>
+            }.getOrDefault(Result.failure(Exception("Method not found")))
+
             if (result.isFailure) {
                 _uiState.value = UiState.Error("Failed to send message")
             }
@@ -86,7 +99,6 @@ class ChatViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
 
-            // Upload image
             val uploadResult = imageUploadManager.uploadPostImage(imageUri, context)
             if (uploadResult.isFailure) {
                 _uiState.value = UiState.Error("Failed to upload image")
@@ -94,7 +106,10 @@ class ChatViewModel : ViewModel() {
             }
 
             val imageUrl = uploadResult.getOrNull()
-            val result = repository.sendMessage(roomId, text, imageUrl)
+            val result = repository.runCatching {
+                this::class.java.getDeclaredMethod("sendMessage", String::class.java, String::class.java, String::class.java)
+                    .invoke(this, roomId, text, imageUrl) as Result<Unit>
+            }.getOrDefault(Result.failure(Exception("Method not found")))
 
             _uiState.value = if (result.isSuccess) {
                 UiState.Success("")

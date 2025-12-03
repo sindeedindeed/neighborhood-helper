@@ -45,14 +45,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.neighborhoodhelper.model.Notification
-import com.example.neighborhoodhelper.model.NotificationType
 import com.example.neighborhoodhelper.model.Post
 import com.example.neighborhoodhelper.ui.profile.ProfileViewModel
 import com.example.neighborhoodhelper.ui.friends.FriendsViewModel
 import com.example.neighborhoodhelper.ui.chat.ChatViewModel
 import com.example.neighborhoodhelper.utils.ImageUploadManager
 import kotlin.inc
+import com.example.neighborhoodhelper.data.AppNotification
+
 
 // Color Palette
 val PrimaryPurple = Color(0xFF6C63FF)
@@ -92,6 +92,7 @@ fun FeedScreen(navController: NavController) {
     }
 
     FeedContent(
+        navController = navController,
         posts = posts,
         onWilling = { viewModel.accept(it) },
         onPostClick = { id -> navController.navigate("postDetail/$id") },
@@ -159,6 +160,7 @@ fun FeedScreen(navController: NavController) {
 
 @Composable
 fun FeedContent(
+    navController: NavController,
     posts: List<Post>,
     onWilling: (postId: String) -> Unit,
     onPostClick: (postId: String) -> Unit,
@@ -184,12 +186,14 @@ fun FeedContent(
         },
         bottomBar = {
             CustomBottomBar(
+                navController = navController,  // ← Add this line
                 onHomeClick = onHomeClick,
                 onFriendsClick = onFriendsClick,
                 onNotificationsClick = onNotificationsClick,
                 onProfileClick = onProfileClick,
-                viewModel = viewModel // ✅ Add this
+                viewModel = viewModel
             )
+
         }
 
     ) { innerPadding ->
@@ -494,6 +498,7 @@ fun PostCard(
 
 @Composable
 fun CustomBottomBar(
+    navController: NavController,  // ← Add this
     onHomeClick: () -> Unit,
     onFriendsClick: () -> Unit,
     onNotificationsClick: () -> Unit,
@@ -551,7 +556,8 @@ fun CustomBottomBar(
                 }
             },
             selected = false,
-            onClick = onNotificationsClick,
+            onClick = { navController.navigate("notifications") },
+
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = PrimaryPurple,
                 unselectedIconColor = Color.Gray,
@@ -1399,10 +1405,10 @@ fun FriendItem(name: String, onMessageClick: () -> Unit) {
 fun NotificationsDialog(
     onDismiss: () -> Unit,
     navController: NavController,
-    viewModel: FeedViewModel // ✅ Add this parameter
+    viewModel: FeedViewModel
 ) {
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val context = LocalContext.current // Add this line
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1475,33 +1481,37 @@ fun NotificationsDialog(
                             NotificationItemCard(
                                 notification = notification,
                                 onClick = {
-                                    if (notification.postId.isNotBlank()) {
-                                        viewModel.navigateToPostFromNotification(
-                                            notification.postId,
-                                            notification.id,
-                                            navController
-                                        )
-                                        onDismiss()
-                                    } else {
+                                    notification.postId?.let { postId ->
+                                        if (postId.isNotBlank()) {
+                                            viewModel.navigateToPostFromNotification(
+                                                postId,
+                                                notification.id,
+                                                navController
+                                            )
+                                            onDismiss()
+                                        }
+                                    } ?: run {
                                         viewModel.markNotificationAsRead(notification.id)
                                     }
                                 },
                                 onAccept = {
-                                    viewModel.acceptWillingRequest(
-                                        notification.id,
-                                        notification.postId,
-                                        notification.fromUserId
-                                    )
-                                    Toast.makeText(
-                                        context,
-                                        "Accepted willing request from ${notification.fromUsername}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    notification.postId?.let { postId ->
+                                        viewModel.acceptWillingRequest(
+                                            notification.id,
+                                            postId,
+                                            notification.fromUserId
+                                        )
+                                        Toast.makeText(
+                                            context, // Changed from kotlin.context
+                                            "Accepted willing request from ${notification.fromUsername}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 },
                                 onReject = {
                                     viewModel.rejectWillingRequest(notification.id)
                                     Toast.makeText(
-                                        context,
+                                        context, // Changed from kotlin.context
                                         "Rejected willing request",
                                         Toast.LENGTH_SHORT
                                     ).show()
@@ -1515,21 +1525,22 @@ fun NotificationsDialog(
     }
 }
 
-
 @Composable
 fun NotificationItemCard(
-    notification: Notification,
+    notification: AppNotification,
     onClick: () -> Unit,
     onAccept: () -> Unit = {},
     onReject: () -> Unit = {}
 ) {
+    val context = LocalContext.current // Add this line
+
     val icon = when (notification.type) {
-        NotificationType.LIKE -> Icons.Default.ThumbUp
-        NotificationType.COMMENT -> Icons.Default.Create
-        NotificationType.REPLY -> Icons.Default.Reply
-        NotificationType.FRIEND_REQUEST -> Icons.Default.PersonAdd
-        NotificationType.MESSAGE -> Icons.Default.Message
-        NotificationType.WILLING -> Icons.Default.VolunteerActivism
+        "like" -> Icons.Default.ThumbUp
+        "comment" -> Icons.Default.Create
+        "reply" -> Icons.Default.Reply
+        "friend_request" -> Icons.Default.PersonAdd
+        "message" -> Icons.Default.Message
+        "willing" -> Icons.Default.VolunteerActivism
         else -> Icons.Default.Notifications
     }
 
@@ -1587,10 +1598,7 @@ fun NotificationItemCard(
                 }
             }
 
-            if (notification.type == NotificationType.WILLING &&
-                notification.requiresAction &&
-                !notification.actionTaken) {
-
+            if (notification.type == "willing") {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
@@ -1598,7 +1606,14 @@ fun NotificationItemCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = onAccept,
+                        onClick = {
+                            onAccept()
+                            Toast.makeText(
+                                context, // Changed from kotlin.context
+                                "Accepted willing request from ${notification.fromUsername}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryPurple
@@ -1609,7 +1624,14 @@ fun NotificationItemCard(
                     }
 
                     OutlinedButton(
-                        onClick = onReject,
+                        onClick = {
+                            onReject()
+                            Toast.makeText(
+                                context, // Changed from kotlin.context
+                                "Rejected willing request",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
@@ -1617,20 +1639,9 @@ fun NotificationItemCard(
                     }
                 }
             }
-
-            if (notification.actionTaken) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Action taken",
-                    fontSize = 12.sp,
-                    color = MediumGray,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                )
-            }
         }
     }
 }
-
 
 @Composable
 fun ProfileDialog(

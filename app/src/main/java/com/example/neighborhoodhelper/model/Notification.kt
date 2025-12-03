@@ -24,5 +24,7 @@ enum class NotificationType {
     REPLY,
     FRIEND_REQUEST,
     MESSAGE,
+    REQUEST_ACCEPTED,
     WILLING // Add this new type
+
 }

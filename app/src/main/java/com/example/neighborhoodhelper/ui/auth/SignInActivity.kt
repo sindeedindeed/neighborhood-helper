@@ -1,6 +1,8 @@
 package com.example.neighborhoodhelper.ui.auth
 
 import android.content.Intent
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.firestore.FirebaseFirestore
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -133,12 +135,27 @@ class SignInActivity : ComponentActivity() {
 
     private fun updateUI(user: FirebaseUser?) {
         user?.let {
+            // Store FCM token
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val token = task.result
+                    FirebaseFirestore.getInstance()
+                        .collection("users")
+                        .document(it.uid)
+                        .update("fcmToken", token)
+                        .addOnFailureListener { e ->
+                            Log.e(TAG, "Failed to store FCM token", e)
+                        }
+                }
+            }
+
             showToast("Welcome ${it.displayName ?: it.email}!")
             Log.d(TAG, "User Info: Display Name: ${it.displayName}, Email: ${it.email}, UID: ${it.uid}")
             startActivity(Intent(this, com.example.neighborhoodhelper.MainActivity::class.java))
             finish()
         }
     }
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

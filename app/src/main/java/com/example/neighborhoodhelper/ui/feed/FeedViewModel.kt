@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.model.Post
 import com.example.neighborhoodhelper.model.Comment
-import com.example.neighborhoodhelper.model.Notification
+import com.example.neighborhoodhelper.data.AppNotification
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import android.content.Context
@@ -50,7 +50,7 @@ class FeedViewModel : ViewModel() {
     }
 
     // Notifications
-    val notifications: StateFlow<List<Notification>> = repository.observeNotifications()
+    val notifications: StateFlow<List<AppNotification>> = repository.observeNotifications()
         .catch { e ->
             Log.w("FeedViewModel", "Error loading notifications", e)
             emit(emptyList())
@@ -60,6 +60,7 @@ class FeedViewModel : ViewModel() {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
 
     // Unread notification count
     val unreadNotificationCount: StateFlow<Int> = notifications.map { list ->

@@ -1,6 +1,7 @@
 package com.example.neighborhoodhelper.ui.auth
 
 import android.content.Intent
+import com.google.firebase.messaging.FirebaseMessaging
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -33,6 +34,7 @@ import com.google.firebase.Timestamp
 import android.util.Log
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlin.text.set
 
 class SignUpActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
@@ -753,14 +755,11 @@ private fun saveUserDataToFirestore(
     onSuccess: () -> Unit,
     onFailure: (Exception) -> Unit
 ) {
-    // First, save the username to the usernames collection (for uniqueness)
     val usernameDoc = firestore.collection("usernames")
         .document(username.lowercase())
 
     usernameDoc.set(hashMapOf("userId" to userId))
         .addOnSuccessListener {
-            // Then save the user data
-            // Basic validation for country code and phone number
             val countryCodePattern = Regex("^\\+\\d{1,4}\$")
             val phoneNumberPattern = Regex("^\\d{6,15}\$")
             if (!countryCodePattern.matches(countryCode)) {
@@ -772,27 +771,33 @@ private fun saveUserDataToFirestore(
                 return@addOnSuccessListener
             }
 
-            val userData = hashMapOf(
-                "firstName" to firstName,
-                "lastName" to lastName,
-                "username" to username,
-                "email" to email,
-                "countryCode" to countryCode,
-                "phoneNumber" to phoneNumber,
-                "nid" to nid,
-                "createdAt" to Timestamp.now(),
-                "emailVerified" to false
-            )
+            // Get FCM token
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { tokenTask ->
+                val fcmToken = if (tokenTask.isSuccessful) tokenTask.result else ""
 
-            firestore.collection("users")
-                .document(userId)
-                .set(userData)
-                .addOnSuccessListener { onSuccess() }
-                .addOnFailureListener { e ->
-                    // If user data save fails, remove the username entry
-                    usernameDoc.delete()
-                    onFailure(e)
-                }
+                val userData = hashMapOf(
+                    "firstName" to firstName,
+                    "lastName" to lastName,
+                    "username" to username,
+                    "email" to email,
+                    "countryCode" to countryCode,
+                    "phoneNumber" to phoneNumber,
+                    "nid" to nid,
+                    "createdAt" to Timestamp.now(),
+                    "emailVerified" to false,
+                    "fcmToken" to fcmToken
+                )
+
+                firestore.collection("users")
+                    .document(userId)
+                    .set(userData)
+                    .addOnSuccessListener { onSuccess() }
+                    .addOnFailureListener { e ->
+                        usernameDoc.delete()
+                        onFailure(e)
+                    }
+            }
         }
         .addOnFailureListener { e -> onFailure(e) }
 }
+

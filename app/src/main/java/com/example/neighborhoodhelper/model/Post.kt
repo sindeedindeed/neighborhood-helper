@@ -7,18 +7,27 @@ import com.google.firebase.firestore.ServerTimestamp
 data class Post(
     @DocumentId
     val id: String = "",
-    val willingUsers: List<String> = emptyList(),
     val userId: String = "",
     val username: String = "",
-    val userAvatarUrl: String = "",
     val content: String = "",
     val imageUrl: String? = null,
     val location: String? = null,
     val likes: Int = 0,
-    val likedBy: List<String> = emptyList(), // User IDs who liked
     val comments: Int = 0,
-    @ServerTimestamp
-    val createdAt: Timestamp? = null,
-    val timestamp: String = "" // Human-readable time (e.g., "5m", "2h")
+    val timestamp: String = "",
+    val willingUsers: List<String> = emptyList(),
+    val status: String = "active", // active, matched, completed, cancelled
+    val willingUserDetails: List<WillingUser> = emptyList()
+)
 
+data class WillingUser(
+    val userId: String = "",
+    val userName: String = "",
+    val userProfileUrl: String? = null,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val address: String = "",
+    @ServerTimestamp
+    val timestamp: Timestamp? = null,
+    val status: String = "pending" // pending, accepted, rejected
 )

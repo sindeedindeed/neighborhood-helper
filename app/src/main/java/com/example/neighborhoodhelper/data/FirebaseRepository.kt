@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.example.neighborhoodhelper.data.AppNotification
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -14,7 +15,12 @@ import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.text.get
-
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlin.text.get
+import com.example.neighborhoodhelper.notifications.NotificationHelper
+import kotlin.collections.remove
+import kotlin.text.get
 
 class FirebaseRepository {
     private val firestore = FirebaseFirestore.getInstance()
@@ -140,6 +146,7 @@ class FirebaseRepository {
         }
     }
 
+
     // ============ COMMENT OPERATIONS ============
 
     // Listen to comments for a specific post
@@ -167,6 +174,7 @@ class FirebaseRepository {
     }
 
     // Add a comment
+    // Add a comment
     suspend fun addComment(postId: String, text: String): Result<String> {
         return try {
             val user = getCurrentUser() ?: return Result.failure(Exception("User not authenticated"))
@@ -192,20 +200,9 @@ class FirebaseRepository {
             val postDoc = postsCollection.document(postId).get().await()
             val postOwnerId = postDoc.getString("userId") ?: ""
 
-            // Create notification if not commenting on own post
+            // Send notification using NotificationHelper
             if (postOwnerId != user.id) {
-                val notification = hashMapOf(
-                    "userId" to postOwnerId,
-                    "fromUserId" to user.id,
-                    "fromUsername" to user.username,
-                    "type" to "COMMENT",
-                    "postId" to postId,
-                    "commentId" to commentRef.id,
-                    "message" to "${user.username} commented on your post",
-                    "isRead" to false,
-                    "createdAt" to FieldValue.serverTimestamp()
-                )
-                notificationsCollection.add(notification)
+                NotificationHelper.sendCommentNotification(postId, postOwnerId, text)
             }
 
             Result.success(commentRef.id)
@@ -215,29 +212,24 @@ class FirebaseRepository {
         }
     }
 
+
     // ============ NOTIFICATION OPERATIONS ============
 
     // Listen to notifications for current user
-    fun observeNotifications(): Flow<List<Notification>> = callbackFlow {
-        val userId = getCurrentUserId()
-        if (userId == null) {
-            trySend(emptyList())
-            close()
-            return@callbackFlow
-        }
+    fun observeNotifications(): Flow<List<AppNotification>> = callbackFlow {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@callbackFlow
 
-        val listener = notificationsCollection
+        val listener = firestore.collection("notifications")
             .whereEqualTo("userId", userId)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e("FirebaseRepo", "Error observing notifications", error)
-                    close(error)
+                    Log.e("FirebaseRepository", "Error observing notifications", error)
                     return@addSnapshotListener
                 }
 
                 val notifications = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(Notification::class.java)
+                    doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
 
                 trySend(notifications)
@@ -246,18 +238,19 @@ class FirebaseRepository {
         awaitClose { listener.remove() }
     }
 
+
     // Mark notification as read
-    suspend fun markNotificationAsRead(notificationId: String): Result<Unit> {
-        return try {
-            notificationsCollection.document(notificationId)
+    suspend fun markNotificationAsRead(notificationId: String) {
+        try {
+            firestore.collection("notifications")
+                .document(notificationId)
                 .update("isRead", true)
                 .await()
-            Result.success(Unit)
         } catch (e: Exception) {
-            Log.e("FirebaseRepo", "Error marking notification as read", e)
-            Result.failure(e)
+            Log.e("FirebaseRepository", "Error marking notification as read", e)
         }
     }
+
 
     // ============ USER OPERATIONS ============
 
@@ -395,6 +388,26 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
+    suspend fun markAllNotificationsAsViewed() {
+        try {
+            val userId = auth.currentUser?.uid ?: return
+
+            val notifications = firestore.collection("notifications")
+                .whereEqualTo("userId", userId)
+                .whereEqualTo("isViewed", false)
+                .get()
+                .await()
+
+            notifications.documents.forEach { doc ->
+                doc.reference.update("isViewed", true).await()
+            }
+
+            Log.d("FirebaseRepository", "✅ All notifications marked as viewed")
+        } catch (e: Exception) {
+            Log.e("FirebaseRepository", "Error marking all notifications as viewed", e)
+        }
+    }
+
 
     // Get friend requests for current user
     fun observeFriendRequests(): Flow<List<FriendRequest>> = callbackFlow {
@@ -704,6 +717,7 @@ class FirebaseRepository {
             Result.failure(e)
         }
     }
+
     suspend fun toggleWilling(postId: String): Result<Boolean> {
         return try {
             val currentUserId = auth.currentUser?.uid ?: return Result.failure(Exception("Not logged in"))
@@ -739,7 +753,6 @@ class FirebaseRepository {
     }
 
 
-
     // Update user settings
     suspend fun updateUserSettings(settings: UserSettings): Result<Unit> {
         return try {
@@ -764,6 +777,313 @@ class FirebaseRepository {
         } catch (e: Exception) {
             Log.e("FirebaseRepo", "Error updating FCM token", e)
             Result.failure(e)
+        }
+    }
+
+    // Add willing user with location
+
+
+
+    // Accept willing user
+    suspend fun acceptWillingUser(
+        postId: String,
+        willingUserId: String
+    ): Result<WillingUser> = withContext(Dispatchers.IO) {
+        try {
+            val postRef = firestore.collection("posts").document(postId)
+            val postSnapshot = postRef.get().await()
+
+            val willingUserDetails = postSnapshot.get("willingUserDetails") as? List<Map<String, Any>> ?: emptyList()
+            val willingUser = willingUserDetails.find {
+                it["userId"] == willingUserId
+            }?.let { map ->
+                WillingUser(
+                    userId = map["userId"] as? String ?: "",
+                    userName = map["userName"] as? String ?: "",
+                    userProfileUrl = map["userProfileUrl"] as? String,
+                    latitude = map["latitude"] as? Double ?: 0.0,
+                    longitude = map["longitude"] as? Double ?: 0.0,
+                    address = map["address"] as? String ?: "",
+                    status = "accepted"
+                )
+            } ?: return@withContext Result.failure(Exception("User not found"))
+
+            postRef.update(mapOf("status" to "matched")).await()
+            // Send notification using NotificationHelper
+            NotificationHelper.sendRequestAcceptedNotification(postId, willingUserId)
+
+
+            Result.success(willingUser)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun rejectWillingUser(
+        postId: String,
+        willingUserId: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            sendMatchRejectedNotification(willingUserId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+
+    // Get willing user details
+    suspend fun getWillingUserDetails(
+        postId: String,
+        userId: String
+    ): Result<WillingUser> = withContext(Dispatchers.IO) {
+        try {
+            val postRef = firestore.collection("posts").document(postId)
+            val postSnapshot = postRef.get().await()
+
+            val willingUserDetails = postSnapshot.get("willingUserDetails") as? List<Map<String, Any>> ?: emptyList()
+            val willingUser = willingUserDetails.find {
+                it["userId"] == userId
+            }?.let { map ->
+                WillingUser(
+                    userId = map["userId"] as? String ?: "",
+                    userName = map["userName"] as? String ?: "",
+                    userProfileUrl = map["userProfileUrl"] as? String,
+                    latitude = map["latitude"] as? Double ?: 0.0,
+                    longitude = map["longitude"] as? Double ?: 0.0,
+                    address = map["address"] as? String ?: ""
+                )
+            } ?: return@withContext Result.failure(Exception("User not found"))
+
+            Result.success(willingUser)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+
+    // Helper methods for notifications
+    private suspend fun sendWillingNotification(
+        ownerId: String,
+        postId: String,
+        willingUserName: String,
+        postContent: String
+    ) {
+        val token = getUserFCMToken(ownerId) ?: return
+
+        firestore.collection("notifications").add(
+            mapOf(
+                "to" to token,
+                "type" to "WILLING",
+                "postId" to postId,
+                "willingUserId" to auth.currentUser?.uid,
+                "willingUserName" to willingUserName,
+                "postContent" to postContent
+            )
+        ).await()
+    }
+
+    private suspend fun sendMatchAcceptedNotification(willingUserId: String, postId: String) {
+        val token = getUserFCMToken(willingUserId) ?: return
+        val ownerName = auth.currentUser?.displayName ?: "The requester"
+
+        firestore.collection("notifications").add(
+            mapOf(
+                "to" to token,
+                "type" to "MATCH_ACCEPTED",
+                "postId" to postId,
+                "ownerName" to ownerName
+            )
+        ).await()
+    }
+
+    private suspend fun sendMatchRejectedNotification(willingUserId: String) {
+        val token = getUserFCMToken(willingUserId) ?: return
+        val ownerName = auth.currentUser?.displayName ?: "The requester"
+
+        firestore.collection("notifications").add(
+            mapOf(
+                "to" to token,
+                "type" to "MATCH_REJECTED",
+                "ownerName" to ownerName
+            )
+        ).await()
+    }
+    suspend fun sendNotificationToUser(
+        targetUserId: String,
+        type: String,
+        data: Map<String, String>
+    ) {
+        try {
+            // Get the target user's FCM token
+            val userDoc = firestore.collection("users")
+                .document(targetUserId)
+                .get()
+                .await()
+
+            val fcmToken = userDoc.getString("fcmToken") ?: return
+
+            // In production, use Firebase Cloud Functions or your backend server
+            // For now, we'll store in Firestore and use Cloud Functions trigger
+            val notification = hashMapOf(
+                "to" to fcmToken,
+                "type" to type,
+                "data" to data,
+                "timestamp" to FieldValue.serverTimestamp()
+            )
+
+            firestore.collection("fcm_messages")
+                .add(notification)
+                .await()
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error sending notification", e)
+        }
+    }
+
+    // Add these methods to your FirebaseRepository class
+
+    // Update the observeNotifications method
+
+    // Get unread notification count
+    fun observeUnreadNotificationCount(): Flow<Int> = callbackFlow {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        if (userId == null) {
+            trySend(0)
+            close()
+            return@callbackFlow
+        }
+
+        val listener = firestore.collection("notifications")
+            .whereEqualTo("userId", userId)
+            .whereEqualTo("isRead", false)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirebaseRepository", "Error observing unread count", error)
+                    trySend(0)
+                    return@addSnapshotListener
+                }
+
+                val count = snapshot?.size() ?: 0
+                trySend(count)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+    // Update addWillingUser to pass willingUserId
+    suspend fun addWillingUser(
+        postId: String,
+        willingUser: WillingUser
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val currentUserId = auth.currentUser?.uid
+                ?: return@withContext Result.failure(Exception("Not authenticated"))
+
+            val postRef = firestore.collection("posts").document(postId)
+            val postSnapshot = postRef.get().await()
+
+            postRef.update(
+                mapOf(
+                    "willingUsers" to FieldValue.arrayUnion(currentUserId),
+                    "willingUserDetails" to FieldValue.arrayUnion(
+                        mapOf(
+                            "userId" to willingUser.userId,
+                            "userName" to willingUser.userName,
+                            "userProfileUrl" to willingUser.userProfileUrl,
+                            "latitude" to willingUser.latitude,
+                            "longitude" to willingUser.longitude,
+                            "address" to willingUser.address,
+                            "status" to (willingUser.status ?: "pending")
+                        )
+                    )
+                )
+            ).await()
+
+            val postOwnerId = postSnapshot.getString("userId")
+                ?: return@withContext Result.failure(Exception("No owner"))
+
+            // Send notification with willingUserId
+            if (postOwnerId != currentUserId) {
+                NotificationHelper.sendWillingNotification(postId, postOwnerId, currentUserId)
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepository", "Error adding willing user", e)
+            Result.failure(e)
+        }
+    }
+
+    // Accept willing user request
+    suspend fun acceptWillingUserRequest(
+        notificationId: String,
+        postId: String,
+        willingUserId: String
+    ): Result<WillingUser> = withContext(Dispatchers.IO) {
+        try {
+            val postRef = firestore.collection("posts").document(postId)
+            val postSnapshot = postRef.get().await()
+
+            val willingUserDetails = postSnapshot.get("willingUserDetails") as? List<Map<String, Any>>
+                ?: emptyList()
+
+            val willingUser = willingUserDetails.find {
+                it["userId"] == willingUserId
+            }?.let { map ->
+                WillingUser(
+                    userId = map["userId"] as? String ?: "",
+                    userName = map["userName"] as? String ?: "",
+                    userProfileUrl = map["userProfileUrl"] as? String,
+                    latitude = map["latitude"] as? Double ?: 0.0,
+                    longitude = map["longitude"] as? Double ?: 0.0,
+                    address = map["address"] as? String ?: "",
+                    status = "accepted"
+                )
+            } ?: return@withContext Result.failure(Exception("User not found"))
+
+            // Update post status
+            postRef.update(mapOf("status" to "matched")).await()
+
+            // Mark notification as read
+            markNotificationAsRead(notificationId)
+
+            // Send acceptance notification
+            NotificationHelper.sendRequestAcceptedNotification(postId, willingUserId)
+
+            Result.success(willingUser)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepository", "Error accepting willing user", e)
+            Result.failure(e)
+        }
+    }
+
+    // Reject willing user request
+    suspend fun rejectWillingUserRequest(
+        notificationId: String,
+        postId: String,
+        willingUserId: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            // Mark notification as read
+            markNotificationAsRead(notificationId)
+
+            // Send rejection notification
+            NotificationHelper.sendRequestRejectedNotification(postId, willingUserId)
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseRepository", "Error rejecting willing user", e)
+            Result.failure(e)
+        }
+    }
+
+
+    private suspend fun getUserFCMToken(userId: String): String? {
+        return try {
+            val userDoc = firestore.collection("users").document(userId).get().await()
+            userDoc.getString("fcmToken")
+        } catch (e: Exception) {
+            null
         }
     }
 }
