@@ -169,7 +169,7 @@ fun MessageItem(message: Message, isCurrentUser: Boolean) {
                 if (message.text.isNotBlank()) {
                     Text(
                         text = message.text,
-                        color = if (isCurrentUser) Color.White else DarkGray,
+                        color = if (isCurrentUser) Color.White else Color(0xFF1A1A1A),  // Explicit dark color
                         fontSize = 14.sp
                     )
                 }
@@ -178,7 +178,7 @@ fun MessageItem(message: Message, isCurrentUser: Boolean) {
 
                 Text(
                     text = formatMessageTime(message.timestamp?.toDate()),
-                    color = if (isCurrentUser) Color.White.copy(alpha = 0.7f) else MediumGray,
+                    color = if (isCurrentUser) Color.White.copy(alpha = 0.7f) else Color(0xFF757575),  // Explicit gray
                     fontSize = 11.sp
                 )
             }

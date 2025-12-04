@@ -29,6 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.neighborhoodhelper.ui.components.CommentItem
@@ -57,6 +61,8 @@ fun PostDetailScreen(navController: NavController, postId: String) {
         modifier = Modifier
             .fillMaxSize()
             .background(color = LightBackground)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .windowInsetsPadding(WindowInsets.ime)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             TopAppBar(

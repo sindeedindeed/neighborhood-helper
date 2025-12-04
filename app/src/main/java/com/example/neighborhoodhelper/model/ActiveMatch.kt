@@ -18,6 +18,10 @@ data class ActiveMatch(
     val helperPhone: String = "",
     val helperLat: Double = 0.0,
     val helperLon: Double = 0.0,
+    val helperRating: Float = 0f,
+    val helperRatingCount: Int = 0,
+    val requesterRating: Float = 0f,
+    val requesterRatingCount: Int = 0,
     val status: String = "active", // active, arrived, completed
     val distance: Float = 0f, // in meters
     val isProximityReached: Boolean = false,
@@ -26,4 +30,3 @@ data class ActiveMatch(
     @ServerTimestamp
     val lastUpdated: Timestamp? = null
 )
-

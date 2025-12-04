@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.Flow
 import com.example.neighborhoodhelper.data.AppNotification
 
@@ -157,7 +158,7 @@ private fun NotificationItem(
                 Icon(
                     imageVector = when (notification.type) {
                         "COMMENT" -> Icons.Default.Comment
-                        "WILLING" -> Icons.Default.Favorite
+                        "WILLING" -> Icons.Default.VolunteerActivism  // Changed from Favorite (heart)
                         "REQUEST_ACCEPTED" -> Icons.Default.CheckCircle
                         "REQUEST_REJECTED" -> Icons.Default.Cancel
                         "LIKE" -> Icons.Default.ThumbUp
@@ -166,7 +167,7 @@ private fun NotificationItem(
                     contentDescription = null,
                     tint = when (notification.type) {
                         "COMMENT" -> MaterialTheme.colorScheme.primary
-                        "WILLING" -> Color(0xFFFF6B6B)
+                        "WILLING" -> Color(0xFF4CAF50)  // Green for willing
                         "REQUEST_ACCEPTED" -> Color(0xFF51CF66)
                         "REQUEST_REJECTED" -> Color(0xFFFF6B6B)
                         "LIKE" -> MaterialTheme.colorScheme.primary
@@ -177,22 +178,43 @@ private fun NotificationItem(
                 Spacer(Modifier.width(16.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = notification.title.ifEmpty { "Notification" },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (!notification.isRead) FontWeight.Bold else FontWeight.Normal
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = notification.title.ifEmpty { "Notification" },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (!notification.isRead) FontWeight.Bold else FontWeight.Normal,
+                            color = Color(0xFF1A1A1A)
+                        )
+                        // Show REJECTED badge if notification was rejected
+                        if (notification.wasRejected && notification.type == "WILLING") {
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = Color(0xFFFF6B6B)
+                            ) {
+                                Text(
+                                    text = "REJECTED",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = notification.message,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color(0xFF424242)
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = notification.getFormattedTime(),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
+                        color = Color(0xFF757575)
                     )
                 }
 

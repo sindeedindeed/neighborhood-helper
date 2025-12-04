@@ -34,8 +34,7 @@ import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.ui.auth.LandingActivity
 import com.example.neighborhoodhelper.ui.details.PostDetailScreen
 import com.example.neighborhoodhelper.ui.feed.FeedScreen
-import com.example.neighborhoodhelper.ui.map.LiveLocationScreen
-import com.example.neighborhoodhelper.ui.match.SuccessScreen
+import com.example.neighborhoodhelper.ui.map.MapListScreen
 import com.example.neighborhoodhelper.ui.notifications.NotificationsScreen
 import com.example.neighborhoodhelper.ui.profile.ProfileSetupScreen
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
@@ -207,14 +206,15 @@ class MainActivity : ComponentActivity() {
                                                     postId,
                                                     willingUserId
                                                 )
-                                                result.onSuccess { willingUser ->
+                                                result.onSuccess { matchId ->  // Changed from willingUser to matchId
                                                     Toast.makeText(
                                                         this@MainActivity,
-                                                        "✅ Accepted ${willingUser.userName}'s offer",
+                                                        "✅ Match accepted! Opening tracking...",
                                                         Toast.LENGTH_SHORT
                                                     ).show()
 
-                                                    navController.navigate("success")
+                                                    // Navigate to match tracking screen with matchId
+                                                    navController.navigate("matchTracking/$matchId")
                                                 }.onFailure { error ->
                                                     Toast.makeText(
                                                         this@MainActivity,
@@ -250,23 +250,10 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
-                                composable("success") {
-                                    SuccessScreen(
-                                        context = context,
-                                        requesterName = "Mr. Person 1",
-                                        requesterAddress = "Mirpur DOHS Shopping Mall, Dhaka",
-                                        requesterLat = 23.837971826921812,
-                                        requesterLon = 90.37527760202093,
-                                        onNavigateToMap = { navController.navigate("map") }
-                                    )
-                                }
 
                                 composable("map") {
-                                    LiveLocationScreen(
-                                        context = context,
-                                        lat = 23.837971826921812,
-                                        lon = 90.37527760202093,
-                                        markerTitle = "Requester",
+                                    MapListScreen(
+                                        navController = navController,
                                         onBack = { navController.popBackStack() }
                                     )
                                 }

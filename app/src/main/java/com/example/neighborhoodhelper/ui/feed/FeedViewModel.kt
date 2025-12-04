@@ -7,6 +7,7 @@ import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.model.Post
 import com.example.neighborhoodhelper.model.Comment
 import com.example.neighborhoodhelper.data.AppNotification
+import com.example.neighborhoodhelper.notifications.NotificationHelper
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import android.content.Context
@@ -223,12 +224,11 @@ class FeedViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val currentUserId = auth.currentUser?.uid ?: return@launch
-                val currentUsername = auth.currentUser?.displayName ?: "Anonymous"
 
                 val postSnapshot = db.collection("posts").document(postId).get().await()
                 val postOwnerId = postSnapshot.getString("userId") ?: return@launch
 
-                // Don't allow liking own post
+                // Don't allow marking own post as willing
                 if (postOwnerId == currentUserId) return@launch
 
                 val willingUsers = postSnapshot.get("willingUsers") as? List<String> ?: emptyList()
@@ -257,25 +257,15 @@ class FeedViewModel : ViewModel() {
                         )
                         .await()
 
-                    // Create notification only when marking as willing
-                    val notification = hashMapOf(
-                        "userId" to postOwnerId,
-                        "type" to "WILLING",
-                        "message" to "$currentUsername is willing to help with your post",
-                        "postId" to postId,
-                        "fromUserId" to currentUserId,
-                        "fromUsername" to currentUsername,
-                        "timestamp" to System.currentTimeMillis(),
-                        "isRead" to false,
-                        "requiresAction" to true,
-                        "actionTaken" to false
-                    )
-
-                    db.collection("notifications").add(notification).await()
+                    // Create notification using NotificationHelper with correct field names
+                    if (postOwnerId != currentUserId) {
+                        NotificationHelper.sendWillingNotification(postId, postOwnerId, currentUserId)
+                    }
                 }
 
                 refreshFeed()
             } catch (e: Exception) {
+                Log.e("FeedViewModel", "Error marking as willing", e)
                 _uiState.value = UiState.Error(e.message ?: "Failed to mark as willing")
             }
         }
@@ -310,6 +300,44 @@ class FeedViewModel : ViewModel() {
         }
     }
 
+    // Accept willing user request and get match ID for navigation
+    suspend fun acceptWillingUserRequest(
+        notificationId: String,
+        postId: String,
+        willingUserId: String
+    ): Result<String> {
+        return repository.acceptWillingUserRequest(notificationId, postId, willingUserId)
+    }
+
+    // Reject willing user request
+    suspend fun rejectWillingUserRequest(
+        notificationId: String,
+        postId: String,
+        willingUserId: String
+    ): Result<Unit> {
+        return repository.rejectWillingUserRequest(notificationId, postId, willingUserId)
+    }
+
+    // Accept willing user request and navigate to map with matchId
+    fun acceptWillingUserRequest(
+        notificationId: String,
+        postId: String,
+        willingUserId: String,
+        onSuccess: (String) -> Unit  // Callback with matchId
+    ) {
+        viewModelScope.launch {
+            val result = repository.acceptWillingUserRequest(
+                notificationId,
+                postId,
+                willingUserId
+            )
+            result.onSuccess { matchId ->
+                onSuccess(matchId)
+            }.onFailure { error ->
+                _uiState.value = UiState.Error(error.message ?: "Failed to accept willing request")
+            }
+        }
+    }
 
     fun resetUiState() {
         _uiState.value = UiState.Idle

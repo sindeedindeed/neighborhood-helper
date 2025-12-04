@@ -3,7 +3,9 @@ package com.example.neighborhoodhelper.ui.match
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -35,6 +37,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 @SuppressLint("MissingPermission")
@@ -77,24 +80,7 @@ fun MatchTrackingScreen(
         }
     }
 
-    // Update location periodically
-    LaunchedEffect(hasLocationPermission) {
-        if (hasLocationPermission) {
-            while (true) {
-                try {
-                    fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                        .addOnSuccessListener { location ->
-                            location?.let {
-                                viewModel.updateMyLocation(it.latitude, it.longitude)
-                            }
-                        }
-                } catch (e: SecurityException) {
-                    // Permission revoked
-                }
-                kotlinx.coroutines.delay(5000) // Update every 5 seconds
-            }
-        }
-    }
+    // Manual arrival is now controlled via the on-screen button.
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -272,6 +258,72 @@ fun MatchTrackingScreen(
             }
         }
 
+        if (activeMatch != null) {
+            val partnerName = if (isHelper) activeMatch!!.requesterName else activeMatch!!.helperName
+            val partnerPhone = if (isHelper) activeMatch!!.requesterPhone else activeMatch!!.helperPhone
+            val partnerRating = if (isHelper) activeMatch!!.requesterRating else activeMatch!!.helperRating
+            val partnerRatingCount = if (isHelper) activeMatch!!.requesterRatingCount else activeMatch!!.helperRatingCount
+            val ratingLabel = if (partnerRatingCount > 0) {
+                "${String.format(Locale.getDefault(), "%.1f", partnerRating)} • ${partnerRatingCount} ratings"
+            } else {
+                "No ratings yet"
+            }
+
+            Card(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 160.dp, start = 16.dp, end = 16.dp)
+                    .zIndex(1f),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = partnerName,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepPrimaryDark
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Rating",
+                            tint = Color(0xFFFFB300),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = ratingLabel,
+                            fontSize = 13.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Phone,
+                            contentDescription = "Phone",
+                            tint = DeepPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = partnerPhone.ifBlank { "Phone not shared" },
+                            fontSize = 13.sp,
+                            color = DeepPrimaryDark
+                        )
+                    }
+                }
+            }
+        }
+
         // Distance card at bottom
         if (activeMatch != null) {
             Card(
@@ -382,4 +434,3 @@ fun MatchTrackingScreen(
         }
     }
 }
-

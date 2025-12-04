@@ -20,7 +20,7 @@ android {
     defaultConfig {
         applicationId = "com.example.neighborhoodhelper"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 34  // Changed from 36 to 34 for better compatibility
         versionCode = 1
         versionName = "1.0"
 

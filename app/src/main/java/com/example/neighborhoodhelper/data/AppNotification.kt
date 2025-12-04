@@ -15,7 +15,8 @@ data class AppNotification(
     val title: String = "",
     val requiresAction: Boolean = false,
     val actionData: Map<String, String>? = null,
-    val isViewed: Boolean = false // NEW: Track if notification has been viewed
+    val isViewed: Boolean = false, // Track if notification has been viewed
+    val wasRejected: Boolean = false // Track if willing request was rejected
 ) {
     fun getFormattedTime(): String {
         if (createdAt == null) return "Just now"

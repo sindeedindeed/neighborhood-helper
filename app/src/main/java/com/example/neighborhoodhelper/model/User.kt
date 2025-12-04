@@ -17,5 +17,9 @@ data class User(
     val averageRating: Float = 0f, // 0-5 stars
     val totalRatings: Int = 0,
     val tasksCompleted: Int = 0,
-    val tasksHelped: Int = 0
+    val tasksHelped: Int = 0,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val lastKnownLatitude: Double? = null,
+    val lastKnownLongitude: Double? = null
 )
