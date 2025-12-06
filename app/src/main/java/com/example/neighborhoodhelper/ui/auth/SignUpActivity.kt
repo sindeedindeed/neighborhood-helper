@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,29 +27,94 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.Timestamp
 import android.util.Log
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlin.text.set
 
 class SignUpActivity : ComponentActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var firestore: FirebaseFirestore
+    private lateinit var credentialManager: CredentialManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         auth = FirebaseAuth.getInstance()
         firestore = FirebaseFirestore.getInstance()
+        credentialManager = CredentialManager.create(this)
 
         setContent {
-            SignUpScreen(auth, firestore)
+            SignUpScreen(
+                auth = auth,
+                firestore = firestore,
+                onGoogleSignUpClick = { signInWithGoogle() }
+            )
         }
+    }
+
+    private fun signInWithGoogle() {
+        val googleIdOption = GetGoogleIdOption.Builder()
+            .setFilterByAuthorizedAccounts(false)
+            .setServerClientId(getString(com.example.neighborhoodhelper.R.string.default_web_client_id))
+            .setAutoSelectEnabled(false)  // Don't auto-select, always show picker
+            .build()
+
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(googleIdOption)
+            .build()
+
+        kotlinx.coroutines.MainScope().launch {
+            try {
+                val result = credentialManager.getCredential(
+                    request = request,
+                    context = this@SignUpActivity
+                )
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
+                firebaseAuthWithGoogle(googleIdTokenCredential.idToken)
+            } catch (e: GetCredentialException) {
+                Log.e("SignUpActivity", "Google sign up failed", e)
+                Toast.makeText(
+                    this@SignUpActivity,
+                    "Google sign up failed: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Exception) {
+                Log.e("SignUpActivity", "An error occurred", e)
+                Toast.makeText(
+                    this@SignUpActivity,
+                    "Error: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun firebaseAuthWithGoogle(idToken: String) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener(this) { task ->
+                if (task.isSuccessful) {
+                    Log.d("SignUpActivity", "signInWithCredential:success")
+                    Toast.makeText(this, "Welcome!", Toast.LENGTH_SHORT).show()
+                    startActivity(Intent(this, com.example.neighborhoodhelper.MainActivity::class.java))
+                    finish()
+                } else {
+                    Log.w("SignUpActivity", "signInWithCredential:failure", task.exception)
+                    Toast.makeText(this, "Authentication failed: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                }
+            }
     }
 }
 
@@ -82,7 +148,8 @@ private fun generateUsernameSuggestions(
 @Composable
 fun SignUpScreen(
     auth: FirebaseAuth = FirebaseAuth.getInstance(),
-    firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+    firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
+    onGoogleSignUpClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -708,7 +775,54 @@ fun SignUpScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // OR divider
+            Text(
+                "Or, sign up with",
+                fontSize = 13.sp,
+                color = Color(0xFF9E9E9E),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                textAlign = TextAlign.Center
+            )
+
+            // Google Sign-Up Button
+            OutlinedButton(
+                onClick = { if (!isLoading) onGoogleSignUpClick() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.Black,
+                    containerColor = Color.Transparent
+                ),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                enabled = !isLoading
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        "G",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4285F4),
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(
+                        "Sign up with Google",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF1A1A1A)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Already have account text
             Row(

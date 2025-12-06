@@ -72,8 +72,9 @@ class SignInActivity : ComponentActivity() {
 
     private fun signInWithGoogle() {
         val googleIdOption = GetGoogleIdOption.Builder()
-            .setFilterByAuthorizedAccounts(false)
+            .setFilterByAuthorizedAccounts(false)  // Show all accounts, not just authorized ones
             .setServerClientId(getString(com.example.neighborhoodhelper.R.string.default_web_client_id))
+            .setAutoSelectEnabled(false)  // Force account picker to show
             .build()
 
         val request = GetCredentialRequest.Builder()
@@ -86,9 +87,11 @@ class SignInActivity : ComponentActivity() {
                 val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
                 firebaseAuthWithGoogle(googleIdTokenCredential.idToken)
             } catch (e: GetCredentialException) {
-                showError("Google sign in failed", e)
+                Log.e(TAG, "Google sign in failed", e)
+                showError("Google sign in failed. Please try again or use email/password.", e)
             } catch (e: Exception) {
-                showError("An error occurred", e)
+                Log.e(TAG, "An error occurred", e)
+                showError("An error occurred. Please try again.", e)
             }
         }
     }

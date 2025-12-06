@@ -34,8 +34,7 @@ import com.example.neighborhoodhelper.data.FirebaseRepository
 import com.example.neighborhoodhelper.ui.auth.LandingActivity
 import com.example.neighborhoodhelper.ui.details.PostDetailScreen
 import com.example.neighborhoodhelper.ui.feed.FeedScreen
-import com.example.neighborhoodhelper.ui.map.LiveLocationScreen
-import com.example.neighborhoodhelper.ui.match.SuccessScreen
+import com.example.neighborhoodhelper.ui.map.MapListScreen
 import com.example.neighborhoodhelper.ui.notifications.NotificationsScreen
 import com.example.neighborhoodhelper.ui.profile.ProfileSetupScreen
 import com.example.neighborhoodhelper.ui.theme.NeighborhoodHelperTheme
@@ -207,14 +206,15 @@ class MainActivity : ComponentActivity() {
                                                     postId,
                                                     willingUserId
                                                 )
-                                                result.onSuccess { willingUser ->
+                                                result.onSuccess { matchId ->  // Changed from willingUser to matchId
                                                     Toast.makeText(
                                                         this@MainActivity,
-                                                        "✅ Accepted ${willingUser.userName}'s offer",
+                                                        "✅ Match accepted! Opening tracking...",
                                                         Toast.LENGTH_SHORT
                                                     ).show()
 
-                                                    navController.navigate("success")
+                                                    // Navigate to match tracking screen with matchId
+                                                    navController.navigate("matchTracking/$matchId")
                                                 }.onFailure { error ->
                                                     Toast.makeText(
                                                         this@MainActivity,
@@ -250,23 +250,59 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
-                                composable("success") {
-                                    SuccessScreen(
-                                        context = context,
-                                        requesterName = "Mr. Person 1",
-                                        requesterAddress = "Mirpur DOHS Shopping Mall, Dhaka",
-                                        requesterLat = 23.837971826921812,
-                                        requesterLon = 90.37527760202093,
-                                        onNavigateToMap = { navController.navigate("map") }
+
+                                composable("map") {
+                                    MapListScreen(
+                                        navController = navController,
+                                        onBack = { navController.popBackStack() }
                                     )
                                 }
 
-                                composable("map") {
-                                    LiveLocationScreen(
-                                        context = context,
-                                        lat = 23.837971826921812,
-                                        lon = 90.37527760202093,
-                                        markerTitle = "Requester",
+                                composable("taskHistory") {
+                                    com.example.neighborhoodhelper.ui.history.TaskHistoryScreen(
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+
+                                composable(
+                                    route = "matchTracking/{matchId}",
+                                    arguments = listOf(navArgument("matchId") { type = NavType.StringType })
+                                ) { backStackEntry ->
+                                    val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+                                    com.example.neighborhoodhelper.ui.match.MatchTrackingScreen(
+                                        matchId = matchId,
+                                        onBack = { navController.popBackStack() },
+                                        onComplete = {
+                                            navController.navigate("taskHistory") {
+                                                popUpTo("feed") { inclusive = false }
+                                            }
+                                        }
+                                    )
+                                }
+
+                                composable("settings") {
+                                    com.example.neighborhoodhelper.ui.settings.SettingsScreen(
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+
+                                composable("chatList") {
+                                    com.example.neighborhoodhelper.ui.chat.ChatListScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onChatRoomClick = { roomId ->
+                                            navController.navigate("chat/$roomId")
+                                        }
+                                    )
+                                }
+
+                                composable(
+                                    route = "chat/{roomId}",
+                                    arguments = listOf(navArgument("roomId") { type = NavType.StringType })
+                                ) { backStackEntry ->
+                                    val roomId = backStackEntry.arguments?.getString("roomId") ?: ""
+                                    com.example.neighborhoodhelper.ui.chat.ChatScreen(
+                                        roomId = roomId,
+                                        otherUserName = "User", // TODO: Pass actual user name from chat list
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
