@@ -35,10 +35,12 @@ class MatchTrackingViewModel : ViewModel() {
     private fun observeMatch(matchId: String) {
         viewModelScope.launch {
             repository.observeActiveMatch(matchId).collect { match ->
+                Log.d("MatchTrackingVM", "🔄 Match update received: ${match?.status}")
                 _activeMatch.value = match
                 match?.let {
                     val currentUserId = auth.currentUser?.uid
                     _isHelper.value = it.helperId == currentUserId
+                    Log.d("MatchTrackingVM", "👤 User role: ${if (_isHelper.value) "Helper" else "Requester"}")
 
                     // Fetch route when match updates
                     fetchRoute(it)
@@ -53,15 +55,19 @@ class MatchTrackingViewModel : ViewModel() {
                 val origin = LatLng(match.helperLat, match.helperLon)
                 val destination = LatLng(match.requesterLat, match.requesterLon)
 
+                Log.d("MatchTrackingVM", "🗺️ Fetching route from ($origin) to ($destination)")
+
                 val result = DirectionsApiHelper.getDirections(origin, destination)
                 result.onSuccess { routeResult ->
                     _routePolyline.value = routeResult.polyline
-                }.onFailure {
-                    // Fallback: just draw straight line or no line
-                    Log.e("MatchTrackingVM", "Failed to get route", it)
+                    Log.d("MatchTrackingVM", "✅ Route fetched: ${routeResult.polyline.size} points")
+                }.onFailure { error ->
+                    Log.e("MatchTrackingVM", "❌ Failed to get route: ${error.message}", error)
+                    _routePolyline.value = emptyList()
                 }
             } catch (e: Exception) {
-                Log.e("MatchTrackingVM", "Error fetching route", e)
+                Log.e("MatchTrackingVM", "❌ Error fetching route", e)
+                _routePolyline.value = emptyList()
             }
         }
     }

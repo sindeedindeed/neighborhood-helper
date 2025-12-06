@@ -1032,21 +1032,9 @@ class FirebaseRepository {
                 Log.e("FirebaseRepo", "❌ Not authenticated")
                 return@withContext Result.failure(Exception("Not authenticated"))
             }
-            Log.d("FirebaseRepo", "✅ Current user: ${currentUser.username}")
+            Log.d("FirebaseRepo", "✅ Current user: ${currentUser.username} (${currentUser.id})")
 
-            // Mark notification as processed FIRST to ensure buttons disappear
-            try {
-                firestore.collection("notifications").document(notificationId)
-                    .update(mapOf(
-                        "isRead" to true,
-                        "requiresAction" to false
-                    ))
-                    .await()
-                Log.d("FirebaseRepo", "✅ Notification marked as processed")
-            } catch (e: Exception) {
-                Log.e("FirebaseRepo", "⚠️ Failed to update notification, continuing anyway", e)
-            }
-
+            // Get post details FIRST
             val postRef = firestore.collection("posts").document(postId)
             val postSnapshot = postRef.get().await()
             val post = postSnapshot.toObject(Post::class.java)
@@ -1056,25 +1044,48 @@ class FirebaseRepository {
             }
             Log.d("FirebaseRepo", "✅ Post found: ${post.content.take(30)}...")
 
-            if (!post.activeMatchId.isNullOrEmpty()) {
-                return@withContext Result.failure(Exception("This request already has an active helper."))
-            }
-
-            if (userHasOngoingMatch(post.userId)) {
-                return@withContext Result.failure(Exception("Requester already has an active match."))
-            }
-
-            // Get helper user details directly from users collection
+            // Get helper user details
             val helperDoc = usersCollection.document(willingUserId).get().await()
             val helper = helperDoc.toObject(User::class.java)
             if (helper == null) {
                 Log.e("FirebaseRepo", "❌ Helper user not found")
                 return@withContext Result.failure(Exception("Helper not found"))
             }
-            Log.d("FirebaseRepo", "✅ Helper found: ${helper.username}")
+            Log.d("FirebaseRepo", "✅ Helper found: ${helper.username} (${helper.id})")
 
-            if (userHasOngoingMatch(helper.id)) {
-                return@withContext Result.failure(Exception("Helper is already working on another task."))
+            // CHECK ALL CONFLICTS BEFORE MAKING ANY CHANGES
+            if (!post.activeMatchId.isNullOrEmpty()) {
+                Log.e("FirebaseRepo", "❌ Post already has active match: ${post.activeMatchId}")
+                return@withContext Result.failure(Exception("This request already has an active helper."))
+            }
+
+            val requesterMatch = checkUserActiveMatch(post.userId)
+            if (requesterMatch != null) {
+                Log.e("FirebaseRepo", "❌ Requester has ongoing match: ${requesterMatch.first} (status: ${requesterMatch.second})")
+                return@withContext Result.failure(Exception("You already have an active match."))
+            }
+
+            val helperMatch = checkUserActiveMatch(helper.id)
+            if (helperMatch != null) {
+                Log.e("FirebaseRepo", "❌ Helper has ongoing match: ${helperMatch.first} (status: ${helperMatch.second})")
+                return@withContext Result.failure(Exception("${helper.username} is already working on another task."))
+            }
+
+            Log.d("FirebaseRepo", "✅ All conflict checks passed, proceeding with match creation")
+
+            // NOW mark notification as processed (only if all checks pass)
+            if (notificationId.isNotEmpty()) {
+                try {
+                    firestore.collection("notifications").document(notificationId)
+                        .update(mapOf(
+                            "isRead" to true,
+                            "requiresAction" to false
+                        ))
+                        .await()
+                    Log.d("FirebaseRepo", "✅ Notification marked as processed")
+                } catch (e: Exception) {
+                    Log.w("FirebaseRepo", "⚠️ Failed to update notification, continuing anyway", e)
+                }
             }
 
             val helperLocation = (postSnapshot.get("willingUserDetails") as? List<Map<String, Any?>>)
@@ -1168,14 +1179,16 @@ class FirebaseRepository {
             Log.d("FirebaseRepo", "Starting rejectWillingUserRequest - notifId: $notificationId")
 
             // Mark notification as read, remove action requirement, and mark as rejected
-            firestore.collection("notifications").document(notificationId)
-                .update(mapOf(
-                    "isRead" to true,
-                    "requiresAction" to false,
-                    "wasRejected" to true
-                ))
-                .await()
-            Log.d("FirebaseRepo", "Notification marked as rejected")
+            if (notificationId.isNotEmpty()) {
+                firestore.collection("notifications").document(notificationId)
+                    .update(mapOf(
+                        "isRead" to true,
+                        "requiresAction" to false,
+                        "wasRejected" to true
+                    ))
+                    .await()
+                Log.d("FirebaseRepo", "Notification marked as rejected")
+            }
 
             // Send rejection notification
             try {
@@ -1190,6 +1203,35 @@ class FirebaseRepository {
         } catch (e: Exception) {
             Log.e("FirebaseRepo", "Error rejecting willing user", e)
             Result.failure(e)
+        }
+    }
+
+    // Helper function to find notification ID when it's missing from FCM intent
+    suspend fun findWillingNotificationId(postId: String, willingUserId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val currentUserId = auth.currentUser?.uid ?: return@withContext null
+
+            Log.d("FirebaseRepo", "🔍 Searching for notification: postId=$postId, willingUserId=$willingUserId, currentUserId=$currentUserId")
+
+            val snapshot = firestore.collection("notifications")
+                .whereEqualTo("userId", currentUserId)
+                .whereEqualTo("type", "WILLING")
+                .whereEqualTo("fromUserId", willingUserId)
+                .get()
+                .await()
+
+            val notification = snapshot.documents.firstOrNull { doc ->
+                val actionData = doc.get("actionData") as? Map<*, *>
+                actionData?.get("postId") == postId
+            }
+
+            val notificationId = notification?.id
+            Log.d("FirebaseRepo", "🔍 Found notification ID: $notificationId")
+
+            notificationId
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error finding notification ID", e)
+            null
         }
     }
 
@@ -1313,26 +1355,80 @@ class FirebaseRepository {
 
     // ============ ACTIVE MATCH OPERATIONS ============
 
-    private suspend fun userHasOngoingMatch(userId: String): Boolean {
+    // Check if user has an ongoing match and return match ID and status for better error messages
+    private suspend fun checkUserActiveMatch(userId: String): Pair<String, String>? {
         return try {
             val activeStatuses = setOf("active", "arrived")
 
+            Log.d("FirebaseRepo", "🔍 Checking active matches for user: $userId")
+
+            // Check if the user is a helper in any active match
             val helperSnapshot = firestore.collection("activeMatches")
                 .whereEqualTo("helperId", userId)
+                .whereIn("status", activeStatuses.toList())
                 .get()
                 .await()
-            if (helperSnapshot.documents.any { (it.getString("status") ?: "active") in activeStatuses }) {
-                return true
+
+            if (helperSnapshot.documents.isNotEmpty()) {
+                val doc = helperSnapshot.documents.first()
+                val matchId = doc.id
+                val status = doc.getString("status") ?: "unknown"
+                val postId = doc.getString("postId") ?: "unknown"
+                Log.d("FirebaseRepo", "❌ Found active match as HELPER: matchId=$matchId, postId=$postId, status=$status")
+                return Pair(matchId, status)
             }
 
+            // Check if the user is a requester in any active match
             val requesterSnapshot = firestore.collection("activeMatches")
                 .whereEqualTo("requesterId", userId)
+                .whereIn("status", activeStatuses.toList())
                 .get()
                 .await()
-            requesterSnapshot.documents.any { (it.getString("status") ?: "active") in activeStatuses }
+
+            if (requesterSnapshot.documents.isNotEmpty()) {
+                val doc = requesterSnapshot.documents.first()
+                val matchId = doc.id
+                val status = doc.getString("status") ?: "unknown"
+                val postId = doc.getString("postId") ?: "unknown"
+                Log.d("FirebaseRepo", "❌ Found active match as REQUESTER: matchId=$matchId, postId=$postId, status=$status")
+                return Pair(matchId, status)
+            }
+
+            Log.d("FirebaseRepo", "✅ No active matches found for user: $userId")
+            null
         } catch (e: Exception) {
             Log.e("FirebaseRepo", "Error checking active matches for $userId", e)
-            true
+            null
+        }
+    }
+
+    // Legacy function for backwards compatibility
+    private suspend fun userHasOngoingMatch(userId: String): Boolean {
+        return try {
+            val activeStatuses = setOf("active", "arrived") // Define statuses that indicate an ongoing match
+
+            // Check if the user is a helper in any active match
+            val helperSnapshot = firestore.collection("activeMatches")
+                .whereEqualTo("helperId", userId)
+                .whereIn("status", activeStatuses.toList()) // Use Firestore's `whereIn` for status filtering
+                .get()
+                .await()
+
+            if (helperSnapshot.documents.isNotEmpty()) {
+                return true // User is a helper in an ongoing match
+            }
+
+            // Check if the user is a requester in any active match
+            val requesterSnapshot = firestore.collection("activeMatches")
+                .whereEqualTo("requesterId", userId)
+                .whereIn("status", activeStatuses.toList()) // Use Firestore's `whereIn` for status filtering
+                .get()
+                .await()
+
+            requesterSnapshot.documents.isNotEmpty() // Return true if the user is a requester in an ongoing match
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error checking active matches for $userId", e)
+            false // Return false if there is an error
         }
     }
 

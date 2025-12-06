@@ -25,16 +25,25 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val postId = intent.getStringExtra("postId") ?: ""
                 val willingUserId = intent.getStringExtra("willingUserId") ?: ""
 
-                if (notificationId.isEmpty() || postId.isEmpty() || willingUserId.isEmpty()) {
-                    Log.e("NotificationAction", "Missing required data")
+                if (postId.isEmpty() || willingUserId.isEmpty()) {
+                    Log.e("NotificationAction", "Missing required data: postId=$postId, willingUserId=$willingUserId")
                     pendingResult.finish()
                     return
                 }
 
+                Log.d("NotificationAction", "Accept clicked - notificationId=$notificationId, postId=$postId, willingUserId=$willingUserId")
+
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
+                        // If no notificationId, try to find it
+                        val finalNotificationId = if (notificationId.isEmpty()) {
+                            repository.findWillingNotificationId(postId, willingUserId) ?: ""
+                        } else {
+                            notificationId
+                        }
+
                         val result = repository.acceptWillingUserRequest(
-                            notificationId,
+                            finalNotificationId,
                             postId,
                             willingUserId
                         )
@@ -48,11 +57,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 ).show()
                                 launchSuccessScreen(context, postId, willingUserId)
                             } else {
+                                val errorMessage = result.exceptionOrNull()?.message ?: "Unknown error"
                                 Toast.makeText(
                                     context,
-                                    "❌ Failed to accept match",
-                                    Toast.LENGTH_SHORT
+                                    "❌ $errorMessage",
+                                    Toast.LENGTH_LONG
                                 ).show()
+                                Log.e("NotificationAction", "Failed to accept: $errorMessage")
                             }
                         }
                     } catch (e: Exception) {
@@ -61,7 +72,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                             Toast.makeText(
                                 context,
                                 "❌ Error: ${e.message}",
-                                Toast.LENGTH_SHORT
+                                Toast.LENGTH_LONG
                             ).show()
                         }
                     } finally {
@@ -75,16 +86,25 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val postId = intent.getStringExtra("postId") ?: ""
                 val willingUserId = intent.getStringExtra("willingUserId") ?: ""
 
-                if (notificationId.isEmpty() || postId.isEmpty() || willingUserId.isEmpty()) {
-                    Log.e("NotificationAction", "Missing required data")
+                if (postId.isEmpty() || willingUserId.isEmpty()) {
+                    Log.e("NotificationAction", "Missing required data for reject")
                     pendingResult.finish()
                     return
                 }
 
+                Log.d("NotificationAction", "Reject clicked - notificationId=$notificationId, postId=$postId, willingUserId=$willingUserId")
+
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
+                        // If no notificationId, try to find it
+                        val finalNotificationId = if (notificationId.isEmpty()) {
+                            repository.findWillingNotificationId(postId, willingUserId) ?: ""
+                        } else {
+                            notificationId
+                        }
+
                         val result = repository.rejectWillingUserRequest(
-                            notificationId,
+                            finalNotificationId,
                             postId,
                             willingUserId
                         )
@@ -97,9 +117,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {
+                                val errorMessage = result.exceptionOrNull()?.message ?: "Unknown error"
                                 Toast.makeText(
                                     context,
-                                    "❌ Failed to reject match",
+                                    "❌ $errorMessage",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }

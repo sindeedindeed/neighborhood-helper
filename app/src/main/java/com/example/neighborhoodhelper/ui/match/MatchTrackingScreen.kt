@@ -2,15 +2,12 @@ package com.example.neighborhoodhelper.ui.match
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,7 +33,6 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
-import kotlinx.coroutines.delay
 import java.util.Locale
 
 @SuppressLint("MissingPermission")
@@ -64,12 +59,25 @@ fun MatchTrackingScreen(
     var showRatingDialog by remember { mutableStateOf(false) }
     var showCompleteConfirmation by remember { mutableStateOf(false) }
 
-    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val cameraPositionState = rememberCameraPositionState()
 
     // Initialize match tracking
     LaunchedEffect(matchId) {
         viewModel.initialize(matchId)
+    }
+
+    // Start location updates when permission is granted
+    LaunchedEffect(hasLocationPermission) {
+        if (hasLocationPermission) {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        android.util.Log.d("MatchTracking", "📍 Location update: ${location.latitude}, ${location.longitude}")
+                        viewModel.updateMyLocation(location.latitude, location.longitude)
+                    }
+                }
+        }
     }
 
     // Check proximity
@@ -79,8 +87,6 @@ fun MatchTrackingScreen(
             showProximityDialog = true
         }
     }
-
-    // Manual arrival is now controlled via the on-screen button.
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -165,6 +171,11 @@ fun MatchTrackingScreen(
             val helperPos = LatLng(activeMatch!!.helperLat, activeMatch!!.helperLon)
             val myPos = if (isHelper) helperPos else requesterPos
 
+            // Log marker positions for debugging
+            LaunchedEffect(requesterPos, helperPos) {
+                android.util.Log.d("MatchTracking", "📍 Marker positions - Requester: $requesterPos, Helper: $helperPos")
+            }
+
             LaunchedEffect(myPos) {
                 cameraPositionState.position = CameraPosition.fromLatLngZoom(myPos, 15f)
             }
@@ -184,14 +195,14 @@ fun MatchTrackingScreen(
             ) {
                 // Requester marker
                 Marker(
-                    state = MarkerState(position = requesterPos),
+                    state = rememberUpdatedMarkerState(position = requesterPos),
                     title = activeMatch!!.requesterName,
                     snippet = "Task Location"
                 )
 
                 // Helper marker
                 Marker(
-                    state = MarkerState(position = helperPos),
+                    state = rememberUpdatedMarkerState(position = helperPos),
                     title = activeMatch!!.helperName,
                     snippet = "Helper"
                 )
@@ -200,8 +211,8 @@ fun MatchTrackingScreen(
                 if (routePolyline.isNotEmpty()) {
                     Polyline(
                         points = routePolyline,
-                        color = DeepPrimary,
-                        width = 10f
+                        color = Color(0xFF2196F3), // Bright blue for better visibility
+                        width = 15f
                     )
                 }
             }
@@ -226,8 +237,18 @@ fun MatchTrackingScreen(
             }
         }
 
-        // Status card at top
+        // Combined the "en route" tooltip with the review and number information
         if (activeMatch != null) {
+            val partnerName = if (isHelper) activeMatch!!.requesterName else activeMatch!!.helperName
+            val partnerPhone = if (isHelper) activeMatch!!.requesterPhone else activeMatch!!.helperPhone
+            val partnerRating = if (isHelper) activeMatch!!.requesterRating else activeMatch!!.helperRating
+            val partnerRatingCount = if (isHelper) activeMatch!!.requesterRatingCount else activeMatch!!.helperRatingCount
+            val ratingLabel = if (partnerRatingCount > 0) {
+                "${String.format(Locale.getDefault(), "%.1f", partnerRating)} • ${partnerRatingCount} ratings"
+            } else {
+                "No ratings yet"
+            }
+
             Card(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -243,7 +264,7 @@ fun MatchTrackingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (isHelper) activeMatch!!.requesterName else activeMatch!!.helperName,
+                        text = partnerName,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = DeepPrimaryDark
@@ -254,40 +275,7 @@ fun MatchTrackingScreen(
                         fontSize = 14.sp,
                         color = if (activeMatch!!.isProximityReached) Color(0xFF4CAF50) else Color.Gray
                     )
-                }
-            }
-        }
-
-        if (activeMatch != null) {
-            val partnerName = if (isHelper) activeMatch!!.requesterName else activeMatch!!.helperName
-            val partnerPhone = if (isHelper) activeMatch!!.requesterPhone else activeMatch!!.helperPhone
-            val partnerRating = if (isHelper) activeMatch!!.requesterRating else activeMatch!!.helperRating
-            val partnerRatingCount = if (isHelper) activeMatch!!.requesterRatingCount else activeMatch!!.helperRatingCount
-            val ratingLabel = if (partnerRatingCount > 0) {
-                "${String.format(Locale.getDefault(), "%.1f", partnerRating)} • ${partnerRatingCount} ratings"
-            } else {
-                "No ratings yet"
-            }
-
-            Card(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 160.dp, start = 16.dp, end = 16.dp)
-                    .zIndex(1f),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = partnerName,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DeepPrimaryDark
-                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -304,21 +292,29 @@ fun MatchTrackingScreen(
                             color = Color.Gray
                         )
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Phone,
-                            contentDescription = "Phone",
-                            tint = DeepPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = partnerPhone.ifBlank { "Phone not shared" },
-                            fontSize = 13.sp,
-                            color = DeepPrimaryDark
-                        )
+
+                    // Call button
+                    if (partnerPhone.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$partnerPhone"))
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DeepPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Phone,
+                                contentDescription = "Call",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Call $partnerPhone", fontSize = 14.sp)
+                        }
                     }
                 }
             }
